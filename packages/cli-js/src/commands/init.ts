@@ -54,22 +54,28 @@ async function promptFirstProvider(
 
   console.log("\nPlanForge init – provider check\n");
   console.log(`  Claude CLI   ${hasClaude ? "installed" : "not found"}  (recommended for /p planning)`);
-  console.log(`  Codex CLI    ${hasCodex ? "installed" : "not found"}  (recommended for /i implementation)\n`);
+  console.log(`  Codex CLI    ${hasCodex ? "installed" : "not found"}  (recommended for /i implementation)`);
+  console.log("");
 
   if (hasClaude && !hasCodex) {
-    const raw = await ask(`Install Codex? (1) Yes (2) No`, "2");
+    console.log("Install Codex?");
+    console.log("  (1) Yes   (2) No");
+    const raw = await ask("Choice", "2");
     const n = raw === "" ? 2 : parseInt(raw, 10);
     return n === 1 ? "codex" : "no";
   }
   if (!hasClaude && hasCodex) {
-    const raw = await ask(`Install Claude? (1) Yes (2) No`, "2");
+    console.log("Install Claude?");
+    console.log("  (1) Yes   (2) No");
+    const raw = await ask("Choice", "2");
     const n = raw === "" ? 2 : parseInt(raw, 10);
     return n === 1 ? "claude" : "no";
   }
   if (!hasClaude && !hasCodex) {
     console.log("Which one to install first?");
     console.log(`  1) Claude  (install ${CLAUDE_PKG})`);
-    console.log(`  2) Codex   (install ${CODEX_PKG})\n`);
+    console.log(`  2) Codex   (install ${CODEX_PKG})`);
+    console.log("");
     const raw = await ask("Choice [1-2]", "1");
     const n = raw === "" ? 1 : parseInt(raw, 10);
     return n === 2 ? "codex" : "claude";
@@ -90,16 +96,16 @@ async function promptAfterComplete(
   }
   if (hasClaude && hasCodex) {
     if (justInstalledCodexAndHadClaude) {
-      console.log("Continue with init (run claude /init)? (1) Yes (2) No, skip Claude setup for now\n");
-      const raw = await ask("Choice [1-2]", "1");
-      const n = raw === "" ? 1 : parseInt(raw, 10);
-      return n === 1 ? "finish" : "finish_skip_claude";
+      console.log("Both providers are ready. Continuing with init.\n");
+      return "finish_skip_claude";
     }
     console.log("Both providers are ready. Continuing with init.\n");
     return "finish";
   }
   const other = !hasClaude ? "Claude" : "Codex";
-  console.log(`Install ${other} too? (1) Yes (2) No, finish\n`);
+  console.log(`Install ${other} too?`);
+  console.log("  (1) Yes   (2) No, finish");
+  console.log("");
   const raw = await ask("Choice [1-2]", "2");
   const n = raw === "" ? 2 : parseInt(raw, 10);
   return n === 1 ? "install_other" : "finish";
@@ -189,9 +195,9 @@ export async function runInit(args: string[]): Promise<void> {
         const claudeMdPath = resolve(projectRoot, "CLAUDE.md");
         if (!(await fs.pathExists(claudeMdPath))) {
           await fs.writeFile(claudeMdPath, DEFAULT_CLAUDE_MD, "utf-8");
-          console.log("Created CLAUDE.md");
+          console.log("  Created CLAUDE.md");
         }
-        console.log("Claude /init failed (sign in may be required). Run 'claude' to sign in, then run 'claude /init' in this project.");
+        console.log("  Claude /init failed (sign in may be required). Run 'claude' to sign in, then run 'claude /init' in this project.");
       }
     }
 
@@ -199,7 +205,7 @@ export async function runInit(args: string[]): Promise<void> {
       const agentsPath = resolve(projectRoot, "AGENTS.md");
       if (!(await fs.pathExists(agentsPath))) {
         await fs.writeFile(agentsPath, DEFAULT_AGENTS_MD, "utf-8");
-        console.log("Created AGENTS.md");
+        console.log("  Created AGENTS.md");
       }
     }
 
@@ -207,15 +213,17 @@ export async function runInit(args: string[]): Promise<void> {
 
     const plansDir = getPlansDir(projectRoot);
     await fs.ensureDir(plansDir);
-    console.log("Created .cursor/plans");
+    console.log("");
+    console.log("  Created .cursor/plans");
 
     const configPath = resolve(projectRoot, "planforge.json");
     if (!(await fs.pathExists(configPath))) {
       const preset = getPresetForProviders(hasClaude, hasCodex);
       await fs.writeJson(configPath, preset, { spaces: 2 });
-      console.log("Created planforge.json");
+      console.log("  Created planforge.json");
     }
 
+    console.log("");
     console.log("PlanForge init complete.");
   } catch (err) {
     console.error("PlanForge init failed:", (err as Error).message);

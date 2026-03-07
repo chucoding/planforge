@@ -75,13 +75,16 @@ export async function runDoctor(_args: string[]): Promise<void> {
     message: hasPlansDir ? "exists" : "missing (run planforge init)",
   });
 
-  console.log("\nPlanForge doctor\n");
+  console.log("\nPlanForge doctor");
+  console.log("  ─────────────────");
+  console.log("");
   const maxName = Math.max(...checks.map((c) => c.name.length), 16);
   for (const c of checks) {
     const sym = statusSymbol(c.status);
     const padded = c.name.padEnd(maxName);
     console.log(`  ${sym}  ${padded}  ${c.message}`);
   }
+  console.log("");
   if (!hasClaude || !hasCodex) {
     console.log("  → Run planforge init to install missing providers.");
   }
