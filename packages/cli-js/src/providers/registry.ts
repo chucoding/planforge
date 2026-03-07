@@ -9,12 +9,14 @@ import * as codex from "./codex.js";
 export interface PlanOpts {
   cwd: string;
   systemPromptPath?: string;
+  context?: string;
 }
 
 export interface ImplementOpts {
   cwd: string;
   planPath?: string;
   systemPromptPath?: string;
+  context?: string;
 }
 
 export interface PlannerRunner {

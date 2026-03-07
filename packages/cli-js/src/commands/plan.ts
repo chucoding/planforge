@@ -4,6 +4,7 @@
 
 import fs from "fs-extra";
 import { resolve } from "path";
+import { readFile } from "fs/promises";
 import { randomBytes } from "crypto";
 import { spawnSync } from "child_process";
 import { romanize } from "@daun_jung/korean-romanizer";
@@ -57,7 +58,30 @@ function extractTitleFromPlanBody(planBody: string): string {
   return (match ? match[1].trim() : line).slice(0, 80);
 }
 
-export async function runPlan(args: string[]): Promise<void> {
+export interface PlanCliOpts {
+  contextFile?: string;
+  context?: string;
+}
+
+async function resolveContext(opts: PlanCliOpts | undefined, cwd: string): Promise<string | undefined> {
+  if (!opts) return undefined;
+  const parts: string[] = [];
+  if (opts.contextFile) {
+    const absPath = resolve(cwd, opts.contextFile);
+    try {
+      const content = await readFile(absPath, "utf-8");
+      if (content.trim()) parts.push(content.trim());
+    } catch (err) {
+      console.error("Failed to read context file:", (err as Error).message);
+      process.exit(1);
+    }
+  }
+  if (opts.context?.trim()) parts.push(opts.context.trim());
+  if (parts.length === 0) return undefined;
+  return parts.join("\n\n");
+}
+
+export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void> {
   const goal = args.join(" ").trim();
   if (!goal) {
     console.error("Usage: planforge plan <goal>");
@@ -66,6 +90,7 @@ export async function runPlan(args: string[]): Promise<void> {
 
   const cwd = process.cwd();
   const projectRoot = getProjectRoot(cwd);
+  const context = await resolveContext(opts, cwd);
 
   const config = await loadConfig(projectRoot);
   const runner = getPlannerRunner(config.planner.provider);
@@ -81,7 +106,7 @@ export async function runPlan(args: string[]): Promise<void> {
   }
 
   try {
-    const planBody = await runner.runPlan(goal, { cwd: projectRoot });
+    const planBody = await runner.runPlan(goal, { cwd: projectRoot, context });
     const asciiOnly = config.planner.asciiSlug ?? process.env.PLANFORGE_ASCII_SLUG === "1";
     let slug = asciiOnly ? slugifyAscii(goal) : slugifyForFilename(goal);
     if (!isSlugValid(slug)) {

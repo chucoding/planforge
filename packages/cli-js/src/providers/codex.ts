@@ -10,6 +10,7 @@ import { readFile } from "fs/promises";
 import { resolve, dirname, join } from "path";
 import { hasCommand } from "../utils/shell.js";
 import { getTemplatesRoot } from "../utils/paths.js";
+import type { PlanOpts, ImplementOpts } from "./registry.js";
 
 /** npm package for global install: npm install -g @openai/codex */
 export const CLIENT_NPM_PACKAGE = "@openai/codex";
@@ -64,10 +65,7 @@ const DEFAULT_PLANNER_FALLBACK =
 /**
  * Run Codex to generate a plan. Returns plan markdown.
  */
-export async function runPlan(
-  goal: string,
-  opts?: { cwd?: string; systemPromptPath?: string }
-): Promise<string> {
+export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const cwd = opts?.cwd ?? process.cwd();
   const repoRoot = getRepoRoot();
   const defaultPromptPath = resolve(repoRoot, "packages", "core", "prompts", "planner-system.md");
@@ -78,9 +76,17 @@ export async function runPlan(
       opts?.systemPromptPath ?? defaultPromptPath,
       "utf-8"
     );
-    fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser goal: " + goal;
+    let body = systemPrompt.trim();
+    if (opts?.context?.trim()) {
+      body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
   } catch {
-    fullPrompt = DEFAULT_PLANNER_FALLBACK + "\n\nUser goal: " + goal;
+    let fallback = DEFAULT_PLANNER_FALLBACK;
+    if (opts?.context?.trim()) {
+      fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    fullPrompt = fallback + "\n\n---\n\nUser goal: " + goal;
   }
 
   try {
@@ -99,10 +105,7 @@ const DEFAULT_IMPLEMENTER_FALLBACK =
 /**
  * Run Codex to perform implementation. Returns implementation output.
  */
-export async function runImplement(
-  prompt: string,
-  opts?: { cwd?: string; planPath?: string; systemPromptPath?: string }
-): Promise<string> {
+export async function runImplement(prompt: string, opts?: ImplementOpts): Promise<string> {
   const cwd = opts?.cwd ?? process.cwd();
   const repoRoot = getRepoRoot();
   const defaultPromptPath = resolve(repoRoot, "packages", "core", "prompts", "implementer-system.md");
@@ -113,9 +116,17 @@ export async function runImplement(
       opts?.systemPromptPath ?? defaultPromptPath,
       "utf-8"
     );
-    fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser request: " + prompt;
+    let body = systemPrompt.trim();
+    if (opts?.context?.trim()) {
+      body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
   } catch {
-    fullPrompt = DEFAULT_IMPLEMENTER_FALLBACK + "\n\nUser request: " + prompt;
+    let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
+    if (opts?.context?.trim()) {
+      fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    fullPrompt = fallback + "\n\n---\n\nUser request: " + prompt;
   }
 
   try {

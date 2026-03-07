@@ -7,6 +7,7 @@ import { readFile } from "fs/promises";
 import { resolve, dirname } from "path";
 import { hasCommand } from "../utils/shell.js";
 import { getTemplatesRoot } from "../utils/paths.js";
+import type { PlanOpts, ImplementOpts } from "./registry.js";
 
 /** npm package for global install: npm install -g @anthropic-ai/claude-code */
 export const CLIENT_NPM_PACKAGE = "@anthropic-ai/claude-code";
@@ -18,10 +19,7 @@ export function checkClaude(): boolean {
 /**
  * Run Claude to generate a plan. Returns plan markdown.
  */
-export async function runPlan(
-  goal: string,
-  opts?: { cwd?: string; systemPromptPath?: string }
-): Promise<string> {
+export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const cwd = opts?.cwd ?? process.cwd();
   const templatesRoot = getTemplatesRoot();
   const repoRoot = dirname(templatesRoot);
@@ -33,9 +31,17 @@ export async function runPlan(
       opts?.systemPromptPath ?? defaultPromptPath,
       "utf-8"
     );
-    fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser goal: " + goal;
+    let body = systemPrompt.trim();
+    if (opts?.context?.trim()) {
+      body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
   } catch {
-    fullPrompt = "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist.\n\nUser goal: " + goal;
+    let fallback = "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist.";
+    if (opts?.context?.trim()) {
+      fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    fullPrompt = fallback + "\n\n---\n\nUser goal: " + goal;
   }
 
   try {
@@ -60,10 +66,7 @@ const DEFAULT_IMPLEMENTER_FALLBACK =
 /**
  * Run Claude to perform implementation. Returns implementation output (e.g. code or instructions).
  */
-export async function runImplement(
-  prompt: string,
-  opts?: { cwd?: string; planPath?: string; systemPromptPath?: string }
-): Promise<string> {
+export async function runImplement(prompt: string, opts?: ImplementOpts): Promise<string> {
   const cwd = opts?.cwd ?? process.cwd();
   const templatesRoot = getTemplatesRoot();
   const repoRoot = dirname(templatesRoot);
@@ -75,9 +78,17 @@ export async function runImplement(
       opts?.systemPromptPath ?? defaultPromptPath,
       "utf-8"
     );
-    fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser request: " + prompt;
+    let body = systemPrompt.trim();
+    if (opts?.context?.trim()) {
+      body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
   } catch {
-    fullPrompt = DEFAULT_IMPLEMENTER_FALLBACK + "\n\nUser request: " + prompt;
+    let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
+    if (opts?.context?.trim()) {
+      fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    fullPrompt = fallback + "\n\n---\n\nUser request: " + prompt;
   }
 
   try {

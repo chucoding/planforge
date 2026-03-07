@@ -4,6 +4,7 @@
 
 import fs from "fs-extra";
 import { resolve, dirname } from "path";
+import { readFile } from "fs/promises";
 import { getProjectRoot } from "../utils/paths.js";
 import { loadConfig } from "../config/load.js";
 import { getImplementerRunner } from "../providers/registry.js";
@@ -23,7 +24,30 @@ function extractFilesFromOutput(text: string): { path: string; content: string }
   return files;
 }
 
-export async function runImplement(args: string[]): Promise<void> {
+export interface ImplementCliOpts {
+  contextFile?: string;
+  context?: string;
+}
+
+async function resolveContext(opts: ImplementCliOpts | undefined, cwd: string): Promise<string | undefined> {
+  if (!opts) return undefined;
+  const parts: string[] = [];
+  if (opts.contextFile) {
+    const absPath = resolve(cwd, opts.contextFile);
+    try {
+      const content = await readFile(absPath, "utf-8");
+      if (content.trim()) parts.push(content.trim());
+    } catch (err) {
+      console.error("Failed to read context file:", (err as Error).message);
+      process.exit(1);
+    }
+  }
+  if (opts.context?.trim()) parts.push(opts.context.trim());
+  if (parts.length === 0) return undefined;
+  return parts.join("\n\n");
+}
+
+export async function runImplement(args: string[], opts?: ImplementCliOpts): Promise<void> {
   const prompt = args.join(" ").trim();
   if (!prompt) {
     console.error("Usage: planforge implement <prompt>");
@@ -32,6 +56,7 @@ export async function runImplement(args: string[]): Promise<void> {
 
   const cwd = process.cwd();
   const projectRoot = getProjectRoot(cwd);
+  const context = await resolveContext(opts, cwd);
 
   const config = await loadConfig(projectRoot);
   const runner = getImplementerRunner(config.implementer.provider);
@@ -47,7 +72,7 @@ export async function runImplement(args: string[]): Promise<void> {
   }
 
   try {
-    const result = await runner.runImplement(prompt, { cwd: projectRoot });
+    const result = await runner.runImplement(prompt, { cwd: projectRoot, context });
     const extracted = extractFilesFromOutput(result);
     const root = resolve(projectRoot);
     if (extracted.length > 0) {

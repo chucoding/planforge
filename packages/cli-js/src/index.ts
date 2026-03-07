@@ -45,16 +45,20 @@ program
   .command("plan")
   .description("Generate a development plan and save to .cursor/plans (uses planner from planforge.json)")
   .argument("[goal...]", "Planning goal (e.g. design auth refresh token)")
-  .action(async (goalParts: string[]) => {
-    await runPlan(goalParts);
+  .option("--context-file <path>", "Path to conversation context file (e.g. .cursor/chat-context.txt)")
+  .option("--context <text>", "Conversation context text to pass to the planner")
+  .action(async (goalParts: string[], cmd: { opts: () => { contextFile?: string; context?: string } }) => {
+    await runPlan(goalParts, cmd.opts());
   });
 
 program
   .command("implement")
   .description("Run implementation (uses implementer from planforge.json)")
   .argument("[prompt...]", "Implementation prompt or task")
-  .action(async (promptParts: string[]) => {
-    await runImplement(promptParts);
+  .option("--context-file <path>", "Path to conversation context file (e.g. .cursor/chat-context.txt)")
+  .option("--context <text>", "Conversation context text to pass to the implementer")
+  .action(async (promptParts: string[], cmd: { opts: () => { contextFile?: string; context?: string } }) => {
+    await runImplement(promptParts, cmd.opts());
   });
 
 const configCmd = program
