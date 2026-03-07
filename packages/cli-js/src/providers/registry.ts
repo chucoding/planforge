@@ -10,11 +10,13 @@ export interface PlanOpts {
   cwd: string;
   systemPromptPath?: string;
   context?: string;
+  repoContext?: string;
 }
 
 export interface ImplementOpts {
   cwd: string;
   planPath?: string;
+  planContent?: string;
   systemPromptPath?: string;
   context?: string;
 }

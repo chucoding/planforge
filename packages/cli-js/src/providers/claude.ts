@@ -32,12 +32,18 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
       "utf-8"
     );
     let body = systemPrompt.trim();
+    if (opts?.repoContext?.trim()) {
+      body += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
+    }
     if (opts?.context?.trim()) {
       body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
     fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
   } catch {
     let fallback = "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist.";
+    if (opts?.repoContext?.trim()) {
+      fallback += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
+    }
     if (opts?.context?.trim()) {
       fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
@@ -82,11 +88,17 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     if (opts?.context?.trim()) {
       body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
+    if (opts?.planContent?.trim()) {
+      body += "\n\n---\n\nCurrent plan (follow this):\n" + opts.planContent.trim();
+    }
     fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
   } catch {
     let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
     if (opts?.context?.trim()) {
       fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+    }
+    if (opts?.planContent?.trim()) {
+      fallback += "\n\n---\n\nCurrent plan (follow this):\n" + opts.planContent.trim();
     }
     fullPrompt = fallback + "\n\n---\n\nUser request: " + prompt;
   }

@@ -6,6 +6,7 @@ import fs from "fs-extra";
 import { resolve, dirname } from "path";
 import { readFile } from "fs/promises";
 import { getProjectRoot } from "../utils/paths.js";
+import { getActivePlanPath } from "../utils/active-plan.js";
 import { loadConfig } from "../config/load.js";
 import { getImplementerRunner } from "../providers/registry.js";
 
@@ -27,6 +28,7 @@ function extractFilesFromOutput(text: string): { path: string; content: string }
 export interface ImplementCliOpts {
   contextFile?: string;
   context?: string;
+  planFile?: string;
 }
 
 async function resolveContext(opts: ImplementCliOpts | undefined, cwd: string): Promise<string | undefined> {
@@ -58,6 +60,26 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
   const projectRoot = getProjectRoot(cwd);
   const context = await resolveContext(opts, cwd);
 
+  let planContent: string | undefined;
+  if (opts?.planFile) {
+    const absPlan = resolve(cwd, opts.planFile);
+    try {
+      planContent = await readFile(absPlan, "utf-8");
+    } catch (err) {
+      console.error("Failed to read plan file:", (err as Error).message);
+      process.exit(1);
+    }
+  } else {
+    const activePath = getActivePlanPath(projectRoot);
+    if (activePath) {
+      try {
+        planContent = await readFile(activePath, "utf-8");
+      } catch {
+        /* skip plan if unreadable */
+      }
+    }
+  }
+
   const config = await loadConfig(projectRoot);
   const runner = getImplementerRunner(config.implementer.provider);
 
@@ -72,7 +94,7 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
   }
 
   try {
-    const result = await runner.runImplement(prompt, { cwd: projectRoot, context });
+    const result = await runner.runImplement(prompt, { cwd: projectRoot, context, planContent });
     const extracted = extractFilesFromOutput(result);
     const root = resolve(projectRoot);
     if (extracted.length > 0) {

@@ -57,7 +57,8 @@ program
   .argument("[prompt...]", "Implementation prompt or task")
   .option("--context-file <path>", "Path to conversation context file (e.g. .cursor/chat-context.txt)")
   .option("--context <text>", "Conversation context text to pass to the implementer")
-  .action(async (promptParts: string[], cmd: { opts: () => { contextFile?: string; context?: string } }) => {
+  .option("--plan-file <path>", "Path to plan file (default: index.json activePlan or latest .plan.md)")
+  .action(async (promptParts: string[], cmd: { opts: () => { contextFile?: string; context?: string; planFile?: string } }) => {
     await runImplement(promptParts, cmd.opts());
   });
 

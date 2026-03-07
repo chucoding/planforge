@@ -55,7 +55,7 @@ Runs the configured implementer. Plan file names use a goal-based slug (Korean a
 | ------- | ----------- |
 | `planforge init` | Detect providers; optionally install Claude/Codex CLI, hand off for sign-in, show Complete UI; create or suggest `planforge.json`, `.cursor/plans`, skills, and rules. Use `--skip-provider-install` to skip the install step. |
 | `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/<summary>-<hash>.plan.md` using the planner from `planforge.json`. |
-| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. |
+| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. Uses the active plan (`.cursor/plans/index.json` `activePlan` or latest `.plan.md`) unless `--plan-file` is set. See [Architecture](docs/architecture.md#context-and-prompts) for prompt structure. |
 | `planforge config show` | Print current `planforge.json`. |
 | `planforge config suggest [--apply]` | Show suggested config for installed providers; `--apply` writes it to `planforge.json`. |
 | `planforge doctor` | Check Claude/Codex CLI, CLAUDE.md, AGENTS.md, planforge.json, `.cursor/plans`. |
@@ -77,7 +77,7 @@ pnpm run build:cli && pnpm -C packages/cli-js link --global
 
 ## Python
 
-Python CLI is in progress; use the Node CLI for now.
+The Python CLI supports `plan` and `implement` with the same behavior as the Node CLI (same plan convention: index.json `activePlan` or latest `.plan.md`). Use the Node CLI if you need the latest features first.
 
 # Initialize
 
