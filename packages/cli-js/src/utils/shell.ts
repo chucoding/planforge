@@ -3,6 +3,7 @@
  */
 
 import { execSync, spawnSync } from "child_process";
+import { existsSync } from "fs";
 
 const isWindows = process.platform === "win32";
 
@@ -31,13 +32,19 @@ export function hasCommand(cmd: string): boolean {
 
 /**
  * Resolve full path to command executable (for spawning without shell so arguments are preserved).
+ * On Windows, prefers .cmd so we get the real npm global wrapper (e.g. codex.cmd) not the extensionless entry.
  */
 export function resolveCommandPath(cmd: string): string | null {
   try {
     const check = isWindows ? `where ${cmd}` : `which ${cmd}`;
     const out = execSync(check, { encoding: "utf-8", stdio: "pipe" });
-    const first = out.split(/[\r\n]+/)[0]?.trim();
-    return first || null;
+    const lines = out.split(/[\r\n]+/).map((s) => s.trim()).filter(Boolean);
+    if (isWindows && lines.length > 0) {
+      const preferred = lines.find((p) => p.toLowerCase().endsWith(".cmd"));
+      const chosen = preferred ?? lines.find((p) => existsSync(p)) ?? lines[0];
+      return chosen || null;
+    }
+    return lines[0] || null;
   } catch {
     return null;
   }
