@@ -2,13 +2,21 @@
  * Shell / process utilities (run claude, codex, etc.)
  */
 
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
 
 const isWindows = process.platform === "win32";
 
 export function runCommand(cmd: string, args: string[], cwd?: string): string {
   const full = [cmd, ...args].join(" ");
   return execSync(full, { encoding: "utf-8", cwd }).trim();
+}
+
+/**
+ * Run a command with stdio inherited so output is visible in the terminal. Returns true if exit code is 0.
+ */
+export function runCommandLive(cmd: string, args: string[], cwd?: string): boolean {
+  const result = spawnSync(cmd, args, { stdio: "inherit", cwd, shell: true });
+  return result.status === 0;
 }
 
 export function hasCommand(cmd: string): boolean {

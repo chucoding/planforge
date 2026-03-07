@@ -3,12 +3,13 @@
  */
 
 import * as readline from "readline";
+import { spawnSync } from "child_process";
 import fs from "fs-extra";
 import { resolve } from "path";
 import { getProjectRoot, getPlansDir } from "../utils/paths.js";
 import { checkClaude, CLIENT_NPM_PACKAGE as CLAUDE_PKG } from "../providers/claude.js";
 import { checkCodex, CLIENT_NPM_PACKAGE as CODEX_PKG } from "../providers/codex.js";
-import { runCommand } from "../utils/shell.js";
+import { runCommand, runCommandLive } from "../utils/shell.js";
 import { installTemplates } from "../templates/install.js";
 import { getPresetForProviders } from "../config/presets.js";
 
@@ -16,6 +17,11 @@ const DEFAULT_AGENTS_MD = `# AGENTS.md
 
 Codex/OpenAI agent context for this project.
 Customize this file to give the implementer (/i) relevant project context.
+`;
+
+const DEFAULT_CLAUDE_MD = `# CLAUDE.md
+
+Claude project context. Run 'claude /init' after signing in, or edit this file.
 `;
 
 export type ProviderInstallChoice = "claude" | "codex" | "both" | "skip";
@@ -71,13 +77,11 @@ export async function promptProviderInstall(
 }
 
 function installProviderPackage(pkg: string): boolean {
-  try {
-    runCommand("npm", ["install", "-g", pkg]);
-    return true;
-  } catch (err) {
-    console.warn("Warning: npm install -g", pkg, "failed:", (err as Error).message);
-    return false;
+  const ok = runCommandLive("npm", ["install", "-g", pkg]);
+  if (!ok) {
+    console.warn("Warning: npm install -g", pkg, "failed.");
   }
+  return ok;
 }
 
 export async function runInit(args: string[]): Promise<void> {
@@ -88,18 +92,19 @@ export async function runInit(args: string[]): Promise<void> {
   try {
     let hasClaude = checkClaude();
     let hasCodex = checkCodex();
+    let justInstalledClaude = false;
 
     if (!skipProviderInstall && (!hasClaude || !hasCodex)) {
       const choice = await promptProviderInstall(hasClaude, hasCodex);
       if (choice === "claude" && !hasClaude) {
-        installProviderPackage(CLAUDE_PKG);
+        justInstalledClaude = installProviderPackage(CLAUDE_PKG);
         hasClaude = checkClaude();
       } else if (choice === "codex" && !hasCodex) {
         installProviderPackage(CODEX_PKG);
         hasCodex = checkCodex();
       } else if (choice === "both") {
         if (!hasClaude) {
-          installProviderPackage(CLAUDE_PKG);
+          justInstalledClaude = installProviderPackage(CLAUDE_PKG);
           hasClaude = checkClaude();
         }
         if (!hasCodex) {
@@ -109,11 +114,22 @@ export async function runInit(args: string[]): Promise<void> {
       }
     }
 
+    if (hasClaude && justInstalledClaude && process.stdin.isTTY) {
+      console.log("\nClaude CLI was just installed. You'll be switched to Claude to sign in or complete setup. Exit Claude when done.\n");
+      spawnSync("claude", [], { stdio: "inherit", cwd: projectRoot, shell: true });
+    }
+
     if (hasClaude) {
       try {
         runCommand("claude", ["/init"], projectRoot);
       } catch (err) {
         console.warn("Warning: claude /init failed:", (err as Error).message);
+        const claudeMdPath = resolve(projectRoot, "CLAUDE.md");
+        if (!(await fs.pathExists(claudeMdPath))) {
+          await fs.writeFile(claudeMdPath, DEFAULT_CLAUDE_MD, "utf-8");
+          console.log("Created CLAUDE.md");
+        }
+        console.log("Claude /init failed (sign in may be required). Run 'claude' to sign in, then run 'claude /init' in this project.");
       }
     }
 
