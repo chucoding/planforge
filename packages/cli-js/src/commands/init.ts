@@ -88,32 +88,21 @@ function installProviderPackage(pkg: string): boolean {
   return ok;
 }
 
-/** Load config from planforge.json or preset for current providers. */
-async function getConfigForBox(
-  projectRoot: string,
-  hasClaude: boolean,
-  hasCodex: boolean
-): Promise<PlanForgeConfig> {
-  const configPath = resolve(projectRoot, "planforge.json");
-  if (await fs.pathExists(configPath)) {
-    return (await fs.readJson(configPath)) as PlanForgeConfig;
-  }
-  return getPresetForProviders(hasClaude, hasCodex);
-}
-
 function formatRoleModel(config: PlanForgeConfig, role: "planner" | "implementer"): string {
   const r = config[role];
-  return `${r.provider} / ${r.model}`;
+  let s = `${r.provider} / ${r.model}`;
+  if (r.reasoning) s += ` (reasoning: ${r.reasoning})`;
+  if (r.effort) s += ` (effort: ${r.effort})`;
+  return s;
 }
 
-/** Draw Complete UI box with title and /p, /i model lines. */
-async function showCompleteBox(
-  projectRoot: string,
+/** Draw Complete UI box with title and /p, /i model lines. Uses preset for current providers so the box reflects recommended config. */
+function showCompleteBox(
   hasClaude: boolean,
   hasCodex: boolean,
   title: string
-): Promise<void> {
-  const config = await getConfigForBox(projectRoot, hasClaude, hasCodex);
+): void {
+  const config = getPresetForProviders(hasClaude, hasCodex);
   const pLine = `  /p (planning)     : ${formatRoleModel(config, "planner")}`;
   const iLine = `  /i (implementation): ${formatRoleModel(config, "implementer")}`;
   const lines = [title, pLine, iLine];
@@ -158,6 +147,7 @@ export async function runInit(args: string[]): Promise<void> {
     let installedClaudeThisRun = false;
     let installedCodexThisRun = false;
     let finishedWithCodexOnly = false;
+    let showGuideAtEnd = false;
 
     if (!skipProviderInstall && (!hasClaude || !hasCodex)) {
       const first = await promptFirstProvider(hasClaude, hasCodex);
@@ -190,17 +180,15 @@ export async function runInit(args: string[]): Promise<void> {
           : hasCodex
             ? "Complete. Codex is ready."
             : "Complete. Claude is ready.";
-      await showCompleteBox(projectRoot, hasClaude, hasCodex, boxTitle);
+      showCompleteBox(hasClaude, hasCodex, boxTitle);
 
       const nextAfterBox = await promptInstallOtherAfterBox(hasClaude, hasCodex);
       if (nextAfterBox === "finish") {
         if (hasCodex && !hasClaude) {
           finishedWithCodexOnly = true;
         }
-        const otherWasMissing = !hasClaude || !hasCodex;
-        if (otherWasMissing) {
-          console.log("In Cursor, use /p for planning and /i for implementation. Try it out!");
-          console.log("");
+        if (!hasClaude || !hasCodex) {
+          showGuideAtEnd = true;
         }
       } else {
         if (!hasClaude) {
@@ -221,7 +209,7 @@ export async function runInit(args: string[]): Promise<void> {
           }
         }
         if (hasClaude && hasCodex) {
-          await showCompleteBox(projectRoot, hasClaude, hasCodex, "Both providers are ready.");
+          showCompleteBox(hasClaude, hasCodex, "Both providers are ready.");
         }
       }
     }
@@ -252,16 +240,26 @@ export async function runInit(args: string[]): Promise<void> {
 
     const plansDir = getPlansDir(projectRoot);
     await fs.ensureDir(plansDir);
-    console.log("");
-    console.log("  Created .cursor/plans");
 
     const configPath = resolve(projectRoot, "planforge.json");
-    if (!(await fs.pathExists(configPath))) {
+    const createdConfig = !(await fs.pathExists(configPath));
+    if (createdConfig) {
       const preset = getPresetForProviders(hasClaude, hasCodex);
       await fs.writeJson(configPath, preset, { spaces: 2 });
-      console.log("  Created planforge.json");
     }
 
+    console.log("");
+    if (showGuideAtEnd) {
+      console.log("  🎉 Congratulations! PlanForge is ready.");
+      console.log("");
+      console.log("  Example: Design a simple tetris game.");
+      console.log("  In Cursor, use /p for planning and /i for implementation. Try it out!");
+      console.log("");
+    }
+    console.log("  Created .cursor/plans");
+    if (createdConfig) {
+      console.log("  Created planforge.json");
+    }
     console.log("");
     console.log("PlanForge init complete.");
   } catch (err) {
