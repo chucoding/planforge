@@ -5,11 +5,12 @@
 import * as readline from "readline";
 import fs from "fs-extra";
 import { resolve } from "path";
-import { getProjectRoot, getPlansDir, getTemplatesRoot } from "../utils/paths.js";
+import { getProjectRoot, getPlansDir } from "../utils/paths.js";
 import { checkClaude, CLIENT_NPM_PACKAGE as CLAUDE_PKG } from "../providers/claude.js";
 import { checkCodex, CLIENT_NPM_PACKAGE as CODEX_PKG } from "../providers/codex.js";
 import { runCommand } from "../utils/shell.js";
 import { installTemplates } from "../templates/install.js";
+import { getPresetForProviders } from "../config/presets.js";
 
 const DEFAULT_AGENTS_MD = `# AGENTS.md
 
@@ -42,8 +43,8 @@ export async function promptProviderInstall(
   }
 
   console.log("\nPlanForge init – provider check\n");
-  console.log(`  Claude CLI   ${hasClaude ? "installed" : "not found"}  (for /p planning)`);
-  console.log(`  Codex CLI    ${hasCodex ? "installed" : "not found"}  (for /i implementation)\n`);
+  console.log(`  Claude CLI   ${hasClaude ? "installed" : "not found"}  (recommended for /p planning)`);
+  console.log(`  Codex CLI    ${hasCodex ? "installed" : "not found"}  (recommended for /i implementation)\n`);
 
   if (hasClaude && hasCodex) {
     return "skip";
@@ -132,19 +133,9 @@ export async function runInit(args: string[]): Promise<void> {
 
     const configPath = resolve(projectRoot, "planforge.json");
     if (!(await fs.pathExists(configPath))) {
-      const templatesRoot = getTemplatesRoot();
-      const templateConfig = resolve(templatesRoot, "config", "planforge.json");
-      if (await fs.pathExists(templateConfig)) {
-        await fs.copy(templateConfig, configPath);
-        console.log("Created planforge.json");
-      } else {
-        await fs.writeJson(configPath, {
-          planner: { provider: "claude", model: "opus", effort: "high" },
-          implementer: { provider: "codex", model: "codex" },
-          plansDir: ".cursor/plans",
-        }, { spaces: 2 });
-        console.log("Created planforge.json");
-      }
+      const preset = getPresetForProviders(hasClaude, hasCodex);
+      await fs.writeJson(configPath, preset, { spaces: 2 });
+      console.log("Created planforge.json");
     }
 
     console.log("PlanForge init complete.");

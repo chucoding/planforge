@@ -1,12 +1,12 @@
 {
   "planner": {
     "provider": "claude",
-    "model": "opus",
+    "model": "claude-opus-4-6",
     "effort": "high"
   },
   "implementer": {
     "provider": "codex",
-    "model": "codex"
+    "model": "gpt-5.4"
   },
   "plansDir": ".cursor/plans"
 }

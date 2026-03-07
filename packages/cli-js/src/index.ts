@@ -8,6 +8,7 @@ import { runInit } from "./commands/init.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runInstall } from "./commands/install.js";
 import { runPlan } from "./commands/plan.js";
+import { runConfigShow, runConfigSuggest } from "./commands/config.js";
 
 const program = new Command();
 
@@ -45,6 +46,26 @@ program
   .argument("[goal...]", "Planning goal (e.g. design auth refresh token)")
   .action(async (goalParts: string[]) => {
     await runPlan(goalParts);
+  });
+
+const configCmd = program
+  .command("config")
+  .description("Show or suggest planforge.json config")
+  .action(async () => {
+    await runConfigShow([]);
+  });
+configCmd
+  .command("show")
+  .description("Show current planforge.json")
+  .action(async () => {
+    await runConfigShow([]);
+  });
+configCmd
+  .command("suggest")
+  .description("Suggest config for your installed providers (Current vs Suggested)")
+  .option("--apply", "Write suggested config to planforge.json")
+  .action(async (opts: { apply?: boolean }) => {
+    await runConfigSuggest(opts.apply ? ["--apply"] : []);
   });
 
 program.parse();

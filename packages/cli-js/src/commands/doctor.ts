@@ -85,6 +85,9 @@ export async function runDoctor(_args: string[]): Promise<void> {
   if (!hasClaude || !hasCodex) {
     console.log("  → Run planforge init to install missing providers.");
   }
+  if (hasClaude || hasCodex) {
+    console.log("  → Run planforge config suggest to see recommended config for your providers.");
+  }
   console.log("");
 
   const hasError = checks.some((c) => c.status === "error");

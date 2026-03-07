@@ -6,19 +6,20 @@
     "planner": {
       "type": "object",
       "properties": {
-        "provider": { "type": "string", "enum": ["claude"], "default": "claude" },
-        "model": { "type": "string", "default": "opus" },
-        "effort": { "type": "string", "enum": ["low", "medium", "high"], "default": "high" }
-      },
-      "default": { "provider": "claude", "model": "opus", "effort": "high" }
+        "provider": { "type": "string", "enum": ["claude", "codex"] },
+        "model": { "type": "string" },
+        "effort": { "type": "string", "enum": ["low", "medium", "high"] },
+        "reasoning": { "type": "string", "enum": ["low", "high"] }
+      }
     },
     "implementer": {
       "type": "object",
       "properties": {
-        "provider": { "type": "string", "enum": ["codex"], "default": "codex" },
-        "model": { "type": "string", "default": "codex" }
-      },
-      "default": { "provider": "codex", "model": "codex" }
+        "provider": { "type": "string", "enum": ["claude", "codex"] },
+        "model": { "type": "string" },
+        "effort": { "type": "string", "enum": ["low", "medium", "high"] },
+        "reasoning": { "type": "string", "enum": ["low", "high"] }
+      }
     },
     "plansDir": { "type": "string", "default": ".cursor/plans" }
   }
