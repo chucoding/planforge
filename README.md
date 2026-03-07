@@ -2,145 +2,139 @@
 
 **Bring your own AI to Cursor.**
 
-PlanForge lets you use **Claude or Codex inside Cursor Free**.
-
-If your company already pays for:
-
-* Claude
-* Codex
-* OpenAI API
-
-you can use them inside Cursor through slash commands without needing **Cursor Pro**.
+PlanForge lets you use **Claude or Codex inside Cursor Free**. Slash commands and CLI use `planforge.json` to choose which provider runs planning (`/p`) and implementation (`/i`).
 
 # Why PlanForge?
 
 Cursor is great, but many developers already pay for AI elsewhere.
 
-For example:
+* Companies often provide **Claude access**
+* Developers already use **Codex / OpenAI APIs**
 
-* companies often provide **Claude access**
-* developers already use **Codex / OpenAI APIs**
-
-But Cursor requires a separate subscription.
-
-PlanForge lets you use your **existing AI providers** inside Cursor.
+But Cursor requires a separate subscription. PlanForge lets you use your **existing AI providers** inside Cursor through slash commands—no Cursor Pro needed.
 
 # How It Works
 
-PlanForge installs Cursor slash commands that route requests to your AI providers.
+PlanForge installs Cursor slash commands and reads **planforge.json** to route requests:
 
-Example workflow:
+* **`/p`** and **`planforge plan`** use the **planner** (e.g. Claude or Codex).
+* **`/i`** and **`planforge implement`** use the **implementer**.
+
+Example:
 
 ```
 /p design a refresh token auth system
 ```
 
-Runs **Claude** to generate a development plan.
-
-The result is saved to:
+Runs the configured planner and saves the plan to:
 
 ```
-.cursor/plans/auth-refresh-token-2f91ac7b.plan.md
+.cursor/plans/<summary>-<hash>.plan.md
 ```
 
-Then implement it:
+Then:
 
 ```
 /i implement the plan
 ```
 
-This runs **Codex** to generate implementation code.
+Runs the configured implementer. Plan file names use a goal-based slug (Korean and English supported; romanization and plan-title fallback when the slug would be empty).
 
 # Commands
 
-| Command | Purpose        | Provider |
-| ------- | -------------- | -------- |
-| /p      | planning       | Claude   |
-| /i      | implementation | Codex    |
+## Cursor slash commands
+
+| Slash | Role          | Runs |
+| ----- | ------------- | ---- |
+| `/p`  | Planning      | `planforge plan "<goal>"` via `.cursor/skills/p` |
+| `/i`  | Implementation| `planforge implement "<prompt>"` via `.cursor/skills/i` |
+
+## CLI
+
+| Command | Description |
+| ------- | ----------- |
+| `planforge init` | Detect providers; optionally install Claude/Codex CLI, hand off for sign-in, show Complete UI; create or suggest `planforge.json`, `.cursor/plans`, skills, and rules. Use `--skip-provider-install` to skip the install step. |
+| `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/<summary>-<hash>.plan.md` using the planner from `planforge.json`. |
+| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. |
+| `planforge config show` | Print current `planforge.json`. |
+| `planforge config suggest [--apply]` | Show suggested config for installed providers; `--apply` writes it to `planforge.json`. |
+| `planforge doctor` | Check Claude/Codex CLI, CLAUDE.md, AGENTS.md, planforge.json, `.cursor/plans`. |
+| `planforge install [-f]` | Install `.cursor/skills` and `.cursor/rules`; `-f` overwrites existing `planforge.json`. |
 
 # Installation
 
 ## Node
 
+```bash
+npm install -g @planforge/cli
 ```
-npm install -g planforge
+
+Or from this repo:
+
+```bash
+pnpm run build:cli && pnpm -C packages/cli-js link --global
 ```
 
 ## Python
 
-```
-pip install planforge
-```
+Python CLI is in progress; use the Node CLI for now.
 
 # Initialize
 
-Inside your Cursor project:
+In your Cursor project root:
 
-```
+```bash
 planforge init
 ```
 
-This will:
+1. **Provider check** – Shows whether Claude CLI and Codex CLI are installed (recommended for `/p` and `/i`).
+2. **Install (if missing)** – Choose which provider to install; after install you may be switched to that CLI for sign-in (exit with Ctrl+C when done).
+3. **Complete UI** – Shows which provider is ready and the current `/p` and `/i` model mapping.
+4. **Install other?** – Option to install the second provider or finish.
+5. **planforge.json** – Created from a preset if missing. If it already exists and differs from the suggested config for your installed providers, you’ll be asked whether to update it (so you can see how models change).
+6. **Rest** – `claude /init` when Claude is used, AGENTS.md for Codex, `.cursor/plans`, and Cursor skills/rules are set up.
 
-* detect installed AI providers
-* run `claude /init` if Claude is available
-* create `AGENTS.md` if Codex is used
-* install Cursor slash commands
-* create `.cursor/plans`
+Use `--skip-provider-install` to skip the interactive provider install and only create/update config and directories.
 
-# Example Project Structure
+# planforge.json and presets
+
+Config is under `planner` and `implementer`. Presets are chosen from installed providers:
+
+| Installed     | Planner                    | Implementer                |
+| ------------- | -------------------------- | -------------------------- |
+| Claude + Codex| claude / claude-opus-4-6   | codex / gpt-5.4            |
+| Claude only   | claude / claude-opus-4-6   | claude / claude-sonnet-4-6 |
+| Codex only    | codex / gpt-5.4            | codex / gpt-5.4            |
+
+Run `planforge config suggest` to see the suggested config; use `--apply` to write it to `planforge.json`.
+
+# Example project structure
 
 ```
 repo/
- ├ CLAUDE.md
- ├ AGENTS.md
- ├ planforge.json
- └ .cursor/
-     └ plans/
+├── CLAUDE.md
+├── AGENTS.md
+├── planforge.json
+└── .cursor/
+    ├── plans/          # *.plan.md from /p
+    ├── skills/
+    │   ├── p/          # /p → planforge plan
+    │   └── i/          # /i → planforge implement
+    └── rules/
 ```
 
 # Philosophy
 
-Planning and coding are different tasks.
-
-PlanForge lets you use the **best model for each role**.
-
-Example:
-
-```
-/p -> Claude reasoning
-/i -> Codex implementation
-```
+Planning and coding are different tasks. PlanForge uses **planforge.json** so you can pick the best model for each role: `/p` uses the planner, `/i` uses the implementer (Claude, Codex, or both depending on what you install and your config).
 
 # Roadmap
 
-### v0.1
-
-* `/p` planning command
-* Claude provider
-* plan file generation
-
-### v0.2
-
-* `/i` implementation command
-* Codex provider
-* provider routing
-
-### v0.3
-
-* review command
-* additional providers
-* improved context handling
+* **v0.1 / v0.2 (current)** – `/p` and `/i`, Claude and Codex providers, provider routing, init with install/handoff, config suggest.
+* **v0.3** – Review command, more providers, improved context.
 
 # Contributing
 
-PRs welcome.
-
-Ideas for contributions:
-
-* new providers
-* improved prompts
-* workflow commands
+PRs welcome. Ideas: new providers, better prompts, workflow commands.
 
 # License
 
