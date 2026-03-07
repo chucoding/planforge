@@ -2,12 +2,13 @@
  * Codex provider - implementation (e.g. /i)
  */
 
-export async function checkCodex(): Promise<boolean> {
-  // TODO: check if Codex/OpenAI API is available
-  return false;
+import { hasCommand } from "../utils/shell.js";
+
+export function checkCodex(): boolean {
+  return hasCommand("codex");
 }
 
 export async function runImplement(prompt: string, _opts?: Record<string, unknown>): Promise<string> {
-  // TODO: call Codex for implementation
+  // TODO: call Codex for implementation (v0.2)
   return prompt;
 }

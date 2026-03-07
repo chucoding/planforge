@@ -3,12 +3,22 @@
   "title": "PlanForge Config",
   "type": "object",
   "properties": {
-    "providers": {
+    "planner": {
       "type": "object",
       "properties": {
-        "claude": { "type": "object" },
-        "codex": { "type": "object" }
-      }
+        "provider": { "type": "string", "enum": ["claude"], "default": "claude" },
+        "model": { "type": "string", "default": "opus" },
+        "effort": { "type": "string", "enum": ["low", "medium", "high"], "default": "high" }
+      },
+      "default": { "provider": "claude", "model": "opus", "effort": "high" }
+    },
+    "implementer": {
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string", "enum": ["codex"], "default": "codex" },
+        "model": { "type": "string", "default": "codex" }
+      },
+      "default": { "provider": "codex", "model": "codex" }
     },
     "plansDir": { "type": "string", "default": ".cursor/plans" }
   }

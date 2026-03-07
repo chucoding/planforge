@@ -7,7 +7,10 @@ name = "planforge"
 version = "0.1.0"
 description = "PlanForge CLI - Bring your own AI to Cursor"
 requires-python = ">=3.10"
-dependencies = []
+dependencies = [
+    "click>=8.0",
+    "rich>=13.0",
+]
 
 [project.scripts]
 planforge = "planforge.cli:main"

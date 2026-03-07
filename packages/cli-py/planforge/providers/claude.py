@@ -1,11 +1,12 @@
 """Claude provider - planning (e.g. /p)."""
 
+from planforge.utils.shell import has_command
+
 
 def check_claude() -> bool:
-    # TODO: check if claude CLI or API is available
-    return False
+    return has_command("claude")
 
 
 def run_plan(prompt: str, opts: dict | None = None) -> str:
-    # TODO: call Claude for plan generation
+    # Plan generation is implemented in Node CLI for MVP
     return prompt
