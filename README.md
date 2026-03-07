@@ -127,11 +127,6 @@ repo/
 
 Planning and coding are different tasks. PlanForge uses **planforge.json** so you can pick the best model for each role: `/p` uses the planner, `/i` uses the implementer (Claude, Codex, or both depending on what you install and your config).
 
-# Roadmap
-
-* **v0.1 / v0.2 (current)** – `/p` and `/i`, Claude and Codex providers, provider routing, init with install/handoff, config suggest.
-* **v0.3** – Review command, more providers, improved context.
-
 # Contributing
 
 PRs welcome. Ideas: new providers, better prompts, workflow commands.
