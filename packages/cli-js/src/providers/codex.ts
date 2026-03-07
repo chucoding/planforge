@@ -5,7 +5,7 @@
 import { spawnSync } from "child_process";
 import { readFile } from "fs/promises";
 import { resolve, dirname } from "path";
-import { hasCommand } from "../utils/shell.js";
+import { hasCommand, resolveCommandPath } from "../utils/shell.js";
 import { getTemplatesRoot } from "../utils/paths.js";
 
 /** npm package for global install: npm install -g @openai/codex */
@@ -45,13 +45,14 @@ export async function runPlan(
   }
 
   try {
-    // Codex CLI does not accept stdin; use non-interactive "codex exec" with prompt as argument.
-    // shell: true so Windows finds codex.cmd in npm global path.
-    const result = spawnSync("codex", ["exec", fullPrompt], {
+    // Codex CLI does not accept stdin; use "codex exec" with prompt as single argument.
+    // Resolve path so we can spawn without shell (otherwise Windows shell splits the prompt).
+    const codexPath = resolveCommandPath("codex");
+    const result = spawnSync(codexPath ?? "codex", ["exec", fullPrompt], {
       cwd,
       encoding: "utf-8",
       maxBuffer: 1024 * 1024,
-      shell: true,
+      shell: !codexPath,
     });
     if (result.status !== 0) {
       const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
@@ -92,13 +93,14 @@ export async function runImplement(
   }
 
   try {
-    // Codex CLI does not accept stdin; use non-interactive "codex exec" with prompt as argument.
-    // shell: true so Windows finds codex.cmd in npm global path.
-    const result = spawnSync("codex", ["exec", fullPrompt], {
+    // Codex CLI does not accept stdin; use "codex exec" with prompt as single argument.
+    // Resolve path so we can spawn without shell (otherwise Windows shell splits the prompt).
+    const codexPath = resolveCommandPath("codex");
+    const result = spawnSync(codexPath ?? "codex", ["exec", fullPrompt], {
       cwd,
       encoding: "utf-8",
       maxBuffer: 1024 * 1024,
-      shell: true,
+      shell: !codexPath,
     });
     if (result.status !== 0) {
       const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";

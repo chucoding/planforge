@@ -28,3 +28,17 @@ export function hasCommand(cmd: string): boolean {
     return false;
   }
 }
+
+/**
+ * Resolve full path to command executable (for spawning without shell so arguments are preserved).
+ */
+export function resolveCommandPath(cmd: string): string | null {
+  try {
+    const check = isWindows ? `where ${cmd}` : `which ${cmd}`;
+    const out = execSync(check, { encoding: "utf-8", stdio: "pipe" });
+    const first = out.split(/[\r\n]+/)[0]?.trim();
+    return first || null;
+  } catch {
+    return null;
+  }
+}
