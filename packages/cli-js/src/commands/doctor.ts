@@ -18,9 +18,12 @@ interface Check {
 
 function statusSymbol(s: Status): string {
   switch (s) {
-    case "ok": return "✓";
-    case "warn": return "?";
-    case "error": return "✗";
+    case "ok":
+      return "[OK]";
+    case "warn":
+      return "[WARN]";
+    case "error":
+      return "[ERROR]";
   }
 }
 
@@ -76,7 +79,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
   });
 
   console.log("\nPlanForge doctor");
-  console.log("  ─────────────────");
+  console.log("  ------------------------------");
   console.log("");
   const maxName = Math.max(...checks.map((c) => c.name.length), 16);
   for (const c of checks) {
@@ -86,10 +89,10 @@ export async function runDoctor(_args: string[]): Promise<void> {
   }
   console.log("");
   if (!hasClaude || !hasCodex) {
-    console.log("  → Run planforge init to install missing providers.");
+    console.log("  Run planforge init to install missing providers.");
   }
   if (hasClaude || hasCodex) {
-    console.log("  → Run planforge config suggest to see recommended config for your providers.");
+    console.log("  Run planforge config suggest to see recommended config for your providers.");
   }
   console.log("");
 

@@ -23,10 +23,6 @@ export function getProjectRoot(cwd: string = process.cwd()): string {
   return cwd;
 }
 
-export function getCursorDir(projectRoot: string): string {
-  return resolve(projectRoot, ".cursor");
-}
-
 export function getPlansDir(projectRoot: string): string {
   return resolve(projectRoot, ".cursor", "plans");
 }

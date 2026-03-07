@@ -50,7 +50,7 @@ async function promptFirstProvider(
     return "no";
   }
 
-  console.log("\nPlanForge init – provider check\n");
+  console.log("\nPlanForge init - provider check\n");
   console.log(`  Claude CLI   ${hasClaude ? "installed" : "not found"}  (recommended for /p planning)`);
   console.log(`  Codex CLI    ${hasCodex ? "installed" : "not found"}  (recommended for /i implementation)`);
   console.log("");
@@ -108,12 +108,12 @@ function showCompleteBox(
   const iLine = `  /i (implementation): ${formatRoleModel(config, "implementer")}`;
   const lines = [title, pLine, iLine];
   const width = Math.max(...lines.map((s) => s.length), 40);
-  const top = "┌" + "─".repeat(width + 2) + "┐";
-  const bottom = "└" + "─".repeat(width + 2) + "┘";
+  const top = "+" + "-".repeat(width + 2) + "+";
+  const bottom = "+" + "-".repeat(width + 2) + "+";
   console.log("");
   console.log(top);
   for (const line of lines) {
-    console.log("│ " + line.padEnd(width) + " │");
+    console.log("| " + line.padEnd(width) + " |");
   }
   console.log(bottom);
   console.log("");
@@ -274,7 +274,7 @@ export async function runInit(args: string[]): Promise<void> {
 
     console.log("");
     if (showGuideAtEnd) {
-      console.log("  🎉 Congratulations! PlanForge is ready.");
+      console.log("  Congratulations! PlanForge is ready.");
       console.log("");
       console.log("  Example: Design a simple tetris game.");
       console.log("  In Cursor, use /p for planning and /i for implementation. Try it out!");
@@ -293,3 +293,4 @@ export async function runInit(args: string[]): Promise<void> {
     process.exit(1);
   }
 }
+
