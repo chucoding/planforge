@@ -12,6 +12,7 @@ import { checkCodex, CLIENT_NPM_PACKAGE as CODEX_PKG } from "../providers/codex.
 import { runCommand, runCommandLive } from "../utils/shell.js";
 import { installTemplates } from "../templates/install.js";
 import { getPresetForProviders, type PlanForgeConfig } from "../config/presets.js";
+import { formatRole, configEqual } from "./config.js";
 
 const DEFAULT_AGENTS_MD = `# AGENTS.md
 
@@ -242,10 +243,33 @@ export async function runInit(args: string[]): Promise<void> {
     await fs.ensureDir(plansDir);
 
     const configPath = resolve(projectRoot, "planforge.json");
-    const createdConfig = !(await fs.pathExists(configPath));
-    if (createdConfig) {
+    const configExists = await fs.pathExists(configPath);
+    let createdConfig = false;
+    let updatedConfig = false;
+    if (!configExists) {
       const preset = getPresetForProviders(hasClaude, hasCodex);
       await fs.writeJson(configPath, preset, { spaces: 2 });
+      createdConfig = true;
+    } else {
+      const current = (await fs.readJson(configPath)) as PlanForgeConfig;
+      const suggested = getPresetForProviders(hasClaude, hasCodex);
+      if (!configEqual(current, suggested) && process.stdin.isTTY) {
+        console.log("");
+        console.log("  planforge.json already exists. Current config differs from suggested for your installed providers.");
+        console.log("");
+        console.log("  Current:   planner     " + formatRole(current, "planner"));
+        console.log("             implementer " + formatRole(current, "implementer"));
+        console.log("");
+        console.log("  Suggested: planner     " + formatRole(suggested, "planner"));
+        console.log("             implementer " + formatRole(suggested, "implementer"));
+        console.log("");
+        const raw = await ask("Update planforge.json to suggested? (1) Yes (2) No, keep current", "2");
+        const n = raw === "" ? 2 : parseInt(raw, 10);
+        if (n === 1) {
+          await fs.writeJson(configPath, suggested, { spaces: 2 });
+          updatedConfig = true;
+        }
+      }
     }
 
     console.log("");
@@ -259,6 +283,8 @@ export async function runInit(args: string[]): Promise<void> {
     console.log("  Created .cursor/plans");
     if (createdConfig) {
       console.log("  Created planforge.json");
+    } else if (updatedConfig) {
+      console.log("  Updated planforge.json to suggested config.");
     }
     console.log("");
     console.log("PlanForge init complete.");

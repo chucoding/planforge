@@ -12,7 +12,7 @@ import {
   type PlanForgeConfig,
 } from "../config/presets.js";
 
-function formatRole(config: PlanForgeConfig, role: "planner" | "implementer"): string {
+export function formatRole(config: PlanForgeConfig, role: "planner" | "implementer"): string {
   const r = config[role];
   const parts = [r.provider, r.model];
   if (r.effort) parts.push(`effort:${r.effort}`);
@@ -20,7 +20,7 @@ function formatRole(config: PlanForgeConfig, role: "planner" | "implementer"): s
   return parts.join(" / ");
 }
 
-function configEqual(a: PlanForgeConfig, b: PlanForgeConfig): boolean {
+export function configEqual(a: PlanForgeConfig, b: PlanForgeConfig): boolean {
   return (
     JSON.stringify(a.planner) === JSON.stringify(b.planner) &&
     JSON.stringify(a.implementer) === JSON.stringify(b.implementer)
