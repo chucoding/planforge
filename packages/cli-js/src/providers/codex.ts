@@ -2,7 +2,7 @@
  * Codex provider - planning (/p) and implementation (/i)
  */
 
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 import { readFile } from "fs/promises";
 import { resolve, dirname } from "path";
 import { hasCommand } from "../utils/shell.js";
@@ -45,13 +45,17 @@ export async function runPlan(
   }
 
   try {
-    const out = execSync("codex", {
-      encoding: "utf-8",
-      input: fullPrompt,
+    // Codex CLI does not accept stdin; use non-interactive "codex exec" with prompt as argument.
+    const result = spawnSync("codex", ["exec", fullPrompt], {
       cwd,
+      encoding: "utf-8",
       maxBuffer: 1024 * 1024,
     });
-    return typeof out === "string" ? out.trim() : String(out).trim();
+    if (result.status !== 0) {
+      const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
+      throw new Error(String(msg));
+    }
+    return (result.stdout ?? "").trim();
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
@@ -86,13 +90,17 @@ export async function runImplement(
   }
 
   try {
-    const out = execSync("codex", {
-      encoding: "utf-8",
-      input: fullPrompt,
+    // Codex CLI does not accept stdin; use non-interactive "codex exec" with prompt as argument.
+    const result = spawnSync("codex", ["exec", fullPrompt], {
       cwd,
+      encoding: "utf-8",
       maxBuffer: 1024 * 1024,
     });
-    return typeof out === "string" ? out.trim() : String(out).trim();
+    if (result.status !== 0) {
+      const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
+      throw new Error(String(msg));
+    }
+    return (result.stdout ?? "").trim();
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
