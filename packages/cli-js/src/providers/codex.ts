@@ -46,10 +46,12 @@ export async function runPlan(
 
   try {
     // Codex CLI does not accept stdin; use non-interactive "codex exec" with prompt as argument.
+    // shell: true so Windows finds codex.cmd in npm global path.
     const result = spawnSync("codex", ["exec", fullPrompt], {
       cwd,
       encoding: "utf-8",
       maxBuffer: 1024 * 1024,
+      shell: true,
     });
     if (result.status !== 0) {
       const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
@@ -91,10 +93,12 @@ export async function runImplement(
 
   try {
     // Codex CLI does not accept stdin; use non-interactive "codex exec" with prompt as argument.
+    // shell: true so Windows finds codex.cmd in npm global path.
     const result = spawnSync("codex", ["exec", fullPrompt], {
       cwd,
       encoding: "utf-8",
       maxBuffer: 1024 * 1024,
+      shell: true,
     });
     if (result.status !== 0) {
       const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
