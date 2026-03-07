@@ -35,7 +35,7 @@ function runCodexExec(fullPrompt: string, cwd: string): string {
     try {
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `codex exec (Get-Content -Raw -LiteralPath '${escapedPath}')`;
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' | codex exec -`;
       const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
       if (result.status !== 0) {
         const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
@@ -72,7 +72,7 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string): Promise<string>
       const tempPath = join(tmpdir(), "planforge-" + randomBytes(8).toString("hex") + ".txt");
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `codex exec (Get-Content -Raw -LiteralPath '${escapedPath}')`;
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' | codex exec -`;
       const child = spawn("powershell", ["-NoProfile", "-Command", script], {
         ...opts,
         stdio: ["ignore", "pipe", "pipe"],

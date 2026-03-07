@@ -47,8 +47,8 @@ program
   .argument("[goal...]", "Planning goal (e.g. design auth refresh token)")
   .option("--context-file <path>", "Path to conversation context file (e.g. .cursor/chat-context.txt)")
   .option("--context <text>", "Conversation context text to pass to the planner")
-  .action(async (goalParts: string[], cmd: { opts: () => { contextFile?: string; context?: string } }) => {
-    await runPlan(goalParts, cmd.opts());
+  .action(async (goalParts: string[], opts: { contextFile?: string; context?: string }) => {
+    await runPlan(goalParts, opts);
   });
 
 program
@@ -59,8 +59,8 @@ program
   .option("--context <text>", "Conversation context text to pass to the implementer")
   .option("--plan-file <path>", "Path to plan file (default: index.json activePlan or latest .plan.md)")
   .option("--files <paths...>", "File paths to focus on (overrides plan's Files Likely to Change)")
-  .action(async (promptParts: string[], cmd: { opts: () => { contextFile?: string; context?: string; planFile?: string; files?: string[] } }) => {
-    await runImplement(promptParts, cmd.opts());
+  .action(async (promptParts: string[], opts: { contextFile?: string; context?: string; planFile?: string; files?: string[] }) => {
+    await runImplement(promptParts, opts);
   });
 
 const configCmd = program
