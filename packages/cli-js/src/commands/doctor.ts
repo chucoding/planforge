@@ -82,6 +82,9 @@ export async function runDoctor(_args: string[]): Promise<void> {
     const padded = c.name.padEnd(maxName);
     console.log(`  ${sym}  ${padded}  ${c.message}`);
   }
+  if (!hasClaude || !hasCodex) {
+    console.log("  → Run planforge init to install missing providers.");
+  }
   console.log("");
 
   const hasError = checks.some((c) => c.status === "error");

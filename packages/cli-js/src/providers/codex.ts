@@ -4,6 +4,9 @@
 
 import { hasCommand } from "../utils/shell.js";
 
+/** npm package for global install: npm install -g @openai/codex */
+export const CLIENT_NPM_PACKAGE = "@openai/codex";
+
 export function checkCodex(): boolean {
   return hasCommand("codex");
 }

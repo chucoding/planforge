@@ -19,8 +19,9 @@ program
 program
   .command("init")
   .description("Detect providers, run claude /init, create AGENTS.md, install Cursor slash commands, create .cursor/plans and planforge.json")
-  .action(async () => {
-    await runInit([]);
+  .option("--skip-provider-install", "Skip interactive provider (Claude/Codex) install prompt")
+  .action(async (opts: { skipProviderInstall?: boolean }) => {
+    await runInit(opts.skipProviderInstall ? ["--skip-provider-install"] : []);
   });
 
 program

@@ -8,6 +8,9 @@ import { resolve, dirname } from "path";
 import { hasCommand } from "../utils/shell.js";
 import { getTemplatesRoot } from "../utils/paths.js";
 
+/** npm package for global install: npm install -g @anthropic-ai/claude-code */
+export const CLIENT_NPM_PACKAGE = "@anthropic-ai/claude-code";
+
 export function checkClaude(): boolean {
   return hasCommand("claude");
 }
