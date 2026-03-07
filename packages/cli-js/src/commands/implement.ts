@@ -7,8 +7,12 @@ import { resolve, dirname } from "path";
 import { readFile } from "fs/promises";
 import { getProjectRoot } from "../utils/paths.js";
 import { getActivePlanPath } from "../utils/active-plan.js";
+import { parseFilesFromPlan } from "../utils/plan-files.js";
+import { getProjectContext } from "../utils/project-context.js";
 import { loadConfig } from "../config/load.js";
 import { getImplementerRunner } from "../providers/registry.js";
+
+const MAX_CODE_CONTEXT_CHARS = 12000;
 
 /** Extract (relative path, content) from implement output: lines like "### 1) `path/to/file`" followed by a fenced code block. */
 function extractFilesFromOutput(text: string): { path: string; content: string }[] {
@@ -29,6 +33,8 @@ export interface ImplementCliOpts {
   contextFile?: string;
   context?: string;
   planFile?: string;
+  /** File paths to focus on (overrides plan's Files Likely to Change). */
+  files?: string[];
 }
 
 async function resolveContext(opts: ImplementCliOpts | undefined, cwd: string): Promise<string | undefined> {
@@ -47,6 +53,43 @@ async function resolveContext(opts: ImplementCliOpts | undefined, cwd: string): 
   if (opts.context?.trim()) parts.push(opts.context.trim());
   if (parts.length === 0) return undefined;
   return parts.join("\n\n");
+}
+
+/** True if path looks like a glob (contains * or **). */
+function isGlob(path: string): boolean {
+  return path.includes("*");
+}
+
+/** Build codeContext string from filesToChange (non-glob paths only), capped in total size. */
+async function buildCodeContext(
+  projectRoot: string,
+  filesToChange: string[]
+): Promise<string | undefined> {
+  const root = resolve(projectRoot);
+  const parts: string[] = [];
+  let total = 0;
+  for (const rel of filesToChange) {
+    if (isGlob(rel) || total >= MAX_CODE_CONTEXT_CHARS) continue;
+    const abs = resolve(root, rel);
+    if (!abs.startsWith(root)) continue;
+    try {
+      const content = await readFile(abs, "utf-8");
+      const block = `### \`${rel}\`\n\`\`\`\n${content}\n\`\`\`\n`;
+      if (total + block.length > MAX_CODE_CONTEXT_CHARS) {
+        const remaining = MAX_CODE_CONTEXT_CHARS - total - 50;
+        if (remaining > 0) {
+          parts.push(`### \`${rel}\`\n\`\`\`\n${content.slice(0, remaining)}\n...(truncated)\n\`\`\`\n`);
+        }
+        break;
+      }
+      parts.push(block);
+      total += block.length;
+    } catch {
+      /* skip unreadable or binary */
+    }
+  }
+  if (parts.length === 0) return undefined;
+  return parts.join("\n");
 }
 
 export async function runImplement(args: string[], opts?: ImplementCliOpts): Promise<void> {
@@ -93,8 +136,20 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
     process.exit(1);
   }
 
+  const filesToChange = opts?.files?.length ? opts.files : parseFilesFromPlan(planContent);
+  const codeContext =
+    filesToChange.length > 0 ? await buildCodeContext(projectRoot, filesToChange) : undefined;
+  const projectContext = getProjectContext(projectRoot);
+
   try {
-    const result = await runner.runImplement(prompt, { cwd: projectRoot, context, planContent });
+    const result = await runner.runImplement(prompt, {
+      cwd: projectRoot,
+      context,
+      planContent,
+      filesToChange: filesToChange.length > 0 ? filesToChange : undefined,
+      codeContext,
+      projectContext,
+    });
     const extracted = extractFilesFromOutput(result);
     const root = resolve(projectRoot);
     if (extracted.length > 0) {

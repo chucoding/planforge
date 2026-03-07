@@ -7,8 +7,12 @@ from pathlib import Path
 from planforge.utils.paths import get_project_root
 from planforge.utils.config import load_config
 from planforge.utils.active_plan import get_active_plan_path
+from planforge.utils.plan_files import parse_files_from_plan
+from planforge.utils.project_context import get_project_context
 from planforge.providers.codex import check_codex, run_implement as codex_run_implement
 from planforge.providers.claude import check_claude, run_implement as claude_run_implement
+
+MAX_CODE_CONTEXT_CHARS = 12000
 
 BLOCK_RE = re.compile(
     r"(?:###\s*\d+\)\s*)?`([^`]+)`\s*[\r\n]+\s*```[\w]*\r?\n([\s\S]*?)```",
@@ -25,6 +29,35 @@ def _extract_files_from_output(text: str) -> list[tuple[str, str]]:
         content = m.group(2).replace("\r\n", "\n").rstrip()
         files.append((raw_path, content))
     return files
+
+
+def _is_glob(path: str) -> bool:
+    return "*" in path
+
+
+def _build_code_context(project_root: str, files_to_change: list[str]) -> str | None:
+    root = Path(project_root)
+    parts = []
+    total = 0
+    for rel in files_to_change:
+        if _is_glob(rel) or total >= MAX_CODE_CONTEXT_CHARS:
+            continue
+        abs_path = (root / rel).resolve()
+        if not str(abs_path).startswith(str(root.resolve())):
+            continue
+        try:
+            content = abs_path.read_text(encoding="utf-8")
+            block = f"### `{rel}`\n```\n{content}\n```\n"
+            if total + len(block) > MAX_CODE_CONTEXT_CHARS:
+                remaining = MAX_CODE_CONTEXT_CHARS - total - 50
+                if remaining > 0:
+                    parts.append(f"### `{rel}`\n```\n{content[:remaining]}\n...(truncated)\n```\n")
+                break
+            parts.append(block)
+            total += len(block)
+        except (OSError, ValueError):
+            pass
+    return "\n".join(parts) if parts else None
 
 
 def _get_implementer_runner(provider: str):
@@ -80,7 +113,17 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
     if not check():
         print(f"{provider} CLI not found. Install the provider CLI to use planforge implement.", file=sys.stderr)
         raise SystemExit(1)
-    run_opts = {"cwd": project_root, "context": context, "planContent": plan_content}
+    files_to_change = opts.get("files") or parse_files_from_plan(plan_content)
+    code_context = _build_code_context(project_root, files_to_change) if files_to_change else None
+    project_context = get_project_context(project_root)
+    run_opts = {
+        "cwd": project_root,
+        "context": context,
+        "planContent": plan_content,
+        "filesToChange": files_to_change if files_to_change else None,
+        "codeContext": code_context,
+        "projectContext": project_context,
+    }
     try:
         result = run(prompt, run_opts)
     except Exception as e:

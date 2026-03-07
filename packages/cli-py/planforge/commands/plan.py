@@ -7,6 +7,7 @@ from pathlib import Path
 from planforge.utils.paths import get_project_root, get_plans_dir
 from planforge.utils.config import load_config
 from planforge.utils.repo_context import get_repo_context
+from planforge.utils.project_context import get_project_context
 from planforge.providers.codex import check_codex, run_plan as codex_run_plan
 from planforge.providers.claude import check_claude, run_plan as claude_run_plan
 
@@ -89,8 +90,14 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
     if not check():
         print(f"{provider} CLI not found. Install the provider CLI to use planforge plan.", file=__import__("sys").stderr)
         raise SystemExit(1)
-    repo_context = get_repo_context(project_root)
-    run_opts = {"cwd": project_root, "context": context, "repoContext": repo_context}
+    repo_context = get_repo_context(project_root, goal)
+    project_context = get_project_context(project_root)
+    run_opts = {
+        "cwd": project_root,
+        "context": context,
+        "repoContext": repo_context,
+        "projectContext": project_context,
+    }
     try:
         plan_body = run(goal, run_opts)
     except Exception as e:

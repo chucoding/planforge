@@ -48,9 +48,19 @@ def plan_cmd(goal: tuple[str, ...], context_file: str | None, context: str | Non
 @click.option("--context-file", "context_file", type=click.Path(), help="Path to conversation context file (e.g. .cursor/chat-context.txt)")
 @click.option("--context", help="Conversation context text to pass to the implementer")
 @click.option("--plan-file", "plan_file", type=click.Path(), help="Path to plan file (default: index.json activePlan or latest .plan.md)")
-def implement_cmd(prompt: tuple[str, ...], context_file: str | None, context: str | None, plan_file: str | None) -> None:
+@click.option("--files", "files", multiple=True, type=click.Path(), help="File paths to focus on (overrides plan's Files Likely to Change)")
+def implement_cmd(
+    prompt: tuple[str, ...],
+    context_file: str | None,
+    context: str | None,
+    plan_file: str | None,
+    files: tuple[str, ...],
+) -> None:
     """Run implementation (uses implementer from planforge.json)."""
-    run_implement(list(prompt), {"context_file": context_file, "context": context, "plan_file": plan_file})
+    opts = {"context_file": context_file, "context": context, "plan_file": plan_file}
+    if files:
+        opts["files"] = list(files)
+    run_implement(list(prompt), opts)
 
 
 if __name__ == "__main__":

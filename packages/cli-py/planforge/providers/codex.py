@@ -73,6 +73,8 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
         body = Path(prompt_path).read_text(encoding="utf-8").strip()
     except (OSError, ValueError):
         body = DEFAULT_PLANNER_FALLBACK
+    if (opts.get("projectContext") or "").strip():
+        body += "\n\n---\n\nProject context (AGENTS.md):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("repoContext") or "").strip():
         body += "\n\n---\n\nRepository context:\n" + (opts["repoContext"] or "").strip()
     if (opts.get("context") or "").strip():
@@ -94,10 +96,17 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
         body = Path(prompt_path).read_text(encoding="utf-8").strip()
     except (OSError, ValueError):
         body = DEFAULT_IMPLEMENTER_FALLBACK
+    if (opts.get("projectContext") or "").strip():
+        body += "\n\n---\n\nProject context (AGENTS.md):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("context") or "").strip():
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     if (opts.get("planContent") or "").strip():
         body += "\n\n---\n\nCurrent plan (follow this):\n" + (opts["planContent"] or "").strip()
+    files_to_change = opts.get("filesToChange") or []
+    if files_to_change:
+        body += "\n\n---\n\nFiles to focus on:\n" + "\n".join(files_to_change)
+    if (opts.get("codeContext") or "").strip():
+        body += "\n\n---\n\nRelevant file contents:\n" + (opts["codeContext"] or "").strip()
     full_prompt = body + "\n\n---\n\nUser request: " + prompt
     try:
         return _run_codex_exec(full_prompt, cwd)

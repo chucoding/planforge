@@ -11,6 +11,8 @@ export interface PlanOpts {
   systemPromptPath?: string;
   context?: string;
   repoContext?: string;
+  /** Project context from AGENTS.md (or CLAUDE.md). Capped in size. */
+  projectContext?: string;
 }
 
 export interface ImplementOpts {
@@ -19,6 +21,12 @@ export interface ImplementOpts {
   planContent?: string;
   systemPromptPath?: string;
   context?: string;
+  /** File paths or globs to focus on (from plan or --files). */
+  filesToChange?: string[];
+  /** Concatenated file contents for context (capped in size). */
+  codeContext?: string;
+  /** Project context from AGENTS.md (or CLAUDE.md). Capped in size. */
+  projectContext?: string;
 }
 
 export interface PlannerRunner {

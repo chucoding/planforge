@@ -32,6 +32,9 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
       "utf-8"
     );
     let body = systemPrompt.trim();
+    if (opts?.projectContext?.trim()) {
+      body += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+    }
     if (opts?.repoContext?.trim()) {
       body += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
     }
@@ -41,6 +44,9 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
     fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
   } catch {
     let fallback = "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist.";
+    if (opts?.projectContext?.trim()) {
+      fallback += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+    }
     if (opts?.repoContext?.trim()) {
       fallback += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
     }
@@ -85,20 +91,38 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
       "utf-8"
     );
     let body = systemPrompt.trim();
+    if (opts?.projectContext?.trim()) {
+      body += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+    }
     if (opts?.context?.trim()) {
       body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
     if (opts?.planContent?.trim()) {
       body += "\n\n---\n\nCurrent plan (follow this):\n" + opts.planContent.trim();
     }
+    if (opts?.filesToChange?.length) {
+      body += "\n\n---\n\nFiles to focus on:\n" + opts.filesToChange.join("\n");
+    }
+    if (opts?.codeContext?.trim()) {
+      body += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
+    }
     fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
   } catch {
     let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
+    if (opts?.projectContext?.trim()) {
+      fallback += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+    }
     if (opts?.context?.trim()) {
       fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
     if (opts?.planContent?.trim()) {
       fallback += "\n\n---\n\nCurrent plan (follow this):\n" + opts.planContent.trim();
+    }
+    if (opts?.filesToChange?.length) {
+      fallback += "\n\n---\n\nFiles to focus on:\n" + opts.filesToChange.join("\n");
+    }
+    if (opts?.codeContext?.trim()) {
+      fallback += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
     }
     fullPrompt = fallback + "\n\n---\n\nUser request: " + prompt;
   }

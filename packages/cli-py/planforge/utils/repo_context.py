@@ -1,9 +1,12 @@
-"""Collect repository context (git status, diff stat, top-level dirs) for plan prompts. Capped in size."""
+"""Collect repository context (git status, diff stat, top-level dirs) for plan prompts. Optionally ripgrep by goal. Capped in size."""
 
 import subprocess
 from pathlib import Path
 
 MAX_REPO_CONTEXT_CHARS = 3500
+MAX_RIPGREP_CONTEXT_CHARS = 2000
+MAX_REPO_CONTEXT_WITH_RG_CHARS = 5000
+MAX_RIPGREP_FILES = 15
 SKIP_DIRS = frozenset({".git", "node_modules", ".cursor", "dist", "build", "__pycache__", ".venv", "venv"})
 
 
@@ -37,7 +40,51 @@ def _get_top_level_dirs(cwd: str) -> list[str]:
         return []
 
 
-def get_repo_context(project_root: str) -> str | None:
+def _get_ripgrep_context(project_root: str, goal: str) -> str | None:
+    pattern = goal.strip()[:100]
+    if not pattern:
+        return None
+    glob_excludes = [
+        "!.git/**",
+        "!node_modules/**",
+        "!.cursor/**",
+        "!dist/**",
+        "!build/**",
+        "!__pycache__/**",
+        "!.venv/**",
+        "!venv/**",
+    ]
+    args = (
+        ["rg", "-F", "-l", "--max-count", "1", "--max-filesize", "100k"]
+        + [x for g in glob_excludes for x in ("-g", g)]
+        + ["--", pattern]
+    )
+    try:
+        result = subprocess.run(
+            args,
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode not in (0, 1):
+            return None
+        lines = [
+            line.strip()
+            for line in (result.stdout or "").strip().splitlines()
+            if line.strip()
+        ][:MAX_RIPGREP_FILES]
+        if not lines:
+            return None
+        out = "## ripgrep (goal-related)\n" + "\n".join(lines)
+        if len(out) > MAX_RIPGREP_CONTEXT_CHARS:
+            out = out[:MAX_RIPGREP_CONTEXT_CHARS] + "\n...(truncated)"
+        return out
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+
+def get_repo_context(project_root: str, goal: str | None = None) -> str | None:
     if not _is_git_repo(project_root):
         return None
     parts = []
@@ -53,9 +100,22 @@ def get_repo_context(project_root: str) -> str | None:
     dirs = _get_top_level_dirs(project_root)
     if dirs:
         parts.append("## top-level directories\n" + ", ".join(dirs))
-    if not parts:
+    if not parts and not (goal and goal.strip()):
         return None
-    out = "\n\n".join(parts)
-    if len(out) > MAX_REPO_CONTEXT_CHARS:
+    out = "\n\n".join(parts) if parts else ""
+    max_base = (
+        MAX_REPO_CONTEXT_WITH_RG_CHARS - MAX_RIPGREP_CONTEXT_CHARS - 50
+        if goal and goal.strip()
+        else MAX_REPO_CONTEXT_CHARS
+    )
+    if out and len(out) > max_base:
+        out = out[:max_base] + "\n...(truncated)"
+    if goal and goal.strip():
+        rg_block = _get_ripgrep_context(project_root, goal)
+        if rg_block:
+            out = (out + "\n\n" + rg_block) if out else rg_block
+        if len(out) > MAX_REPO_CONTEXT_WITH_RG_CHARS:
+            out = out[:MAX_REPO_CONTEXT_WITH_RG_CHARS] + "\n...(truncated)"
+    elif out and len(out) > MAX_REPO_CONTEXT_CHARS:
         out = out[:MAX_REPO_CONTEXT_CHARS] + "\n...(truncated)"
-    return out
+    return out or None

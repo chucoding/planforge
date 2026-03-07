@@ -10,6 +10,7 @@ import { spawnSync } from "child_process";
 import { romanize } from "@daun_jung/korean-romanizer";
 import { getProjectRoot, getPlansDir } from "../utils/paths.js";
 import { getRepoContext } from "../utils/repo-context.js";
+import { getProjectContext } from "../utils/project-context.js";
 import { loadConfig } from "../config/load.js";
 import { getPlannerRunner } from "../providers/registry.js";
 
@@ -106,10 +107,16 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
     process.exit(1);
   }
 
-  const repoContext = getRepoContext(projectRoot);
+  const repoContext = getRepoContext(projectRoot, goal);
+  const projectContext = getProjectContext(projectRoot);
 
   try {
-    const planBody = await runner.runPlan(goal, { cwd: projectRoot, context, repoContext });
+    const planBody = await runner.runPlan(goal, {
+      cwd: projectRoot,
+      context,
+      repoContext,
+      projectContext,
+    });
     const asciiOnly = config.planner.asciiSlug ?? process.env.PLANFORGE_ASCII_SLUG === "1";
     let slug = asciiOnly ? slugifyAscii(goal) : slugifyForFilename(goal);
     if (!isSlugValid(slug)) {
