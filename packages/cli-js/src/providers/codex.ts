@@ -2,10 +2,13 @@
  * Codex provider - planning (/p) and implementation (/i)
  */
 
+import { randomBytes } from "crypto";
 import { spawnSync } from "child_process";
+import { writeFileSync, unlinkSync } from "fs";
+import { tmpdir } from "os";
 import { readFile } from "fs/promises";
-import { resolve, dirname } from "path";
-import { hasCommand, resolveCommandPath } from "../utils/shell.js";
+import { resolve, dirname, join } from "path";
+import { hasCommand } from "../utils/shell.js";
 import { getTemplatesRoot } from "../utils/paths.js";
 
 /** npm package for global install: npm install -g @openai/codex */
@@ -17,6 +20,42 @@ export function checkCodex(): boolean {
 
 function getRepoRoot(): string {
   return dirname(getTemplatesRoot());
+}
+
+/**
+ * Run "codex exec" with the given prompt. On Windows uses temp file + PowerShell to avoid
+ * EINVAL from spawning .cmd directly (CVE-2024-27980) and to avoid shell splitting long args.
+ */
+function runCodexExec(fullPrompt: string, cwd: string): string {
+  const opts = { cwd, encoding: "utf-8" as const, maxBuffer: 1024 * 1024 };
+
+  if (process.platform === "win32") {
+    const tempPath = join(tmpdir(), "planforge-" + randomBytes(8).toString("hex") + ".txt");
+    try {
+      writeFileSync(tempPath, fullPrompt, "utf-8");
+      const escapedPath = tempPath.replace(/'/g, "''");
+      const script = `codex exec (Get-Content -Raw -LiteralPath '${escapedPath}')`;
+      const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
+      if (result.status !== 0) {
+        const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
+        throw new Error(String(msg));
+      }
+      return (result.stdout ?? "").trim();
+    } finally {
+      try {
+        unlinkSync(tempPath);
+      } catch {
+        // ignore cleanup failure
+      }
+    }
+  }
+
+  const result = spawnSync("codex", ["exec", fullPrompt], { ...opts, shell: false });
+  if (result.status !== 0) {
+    const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
+    throw new Error(String(msg));
+  }
+  return (result.stdout ?? "").trim();
 }
 
 const DEFAULT_PLANNER_FALLBACK =
@@ -45,20 +84,7 @@ export async function runPlan(
   }
 
   try {
-    // Codex CLI does not accept stdin; use "codex exec" with prompt as single argument.
-    // Resolve path so we can spawn without shell (otherwise Windows shell splits the prompt).
-    const codexPath = resolveCommandPath("codex");
-    const result = spawnSync(codexPath ?? "codex", ["exec", fullPrompt], {
-      cwd,
-      encoding: "utf-8",
-      maxBuffer: 1024 * 1024,
-      shell: !codexPath,
-    });
-    if (result.status !== 0) {
-      const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
-      throw new Error(String(msg));
-    }
-    return (result.stdout ?? "").trim();
+    return runCodexExec(fullPrompt, cwd);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
@@ -93,20 +119,7 @@ export async function runImplement(
   }
 
   try {
-    // Codex CLI does not accept stdin; use "codex exec" with prompt as single argument.
-    // Resolve path so we can spawn without shell (otherwise Windows shell splits the prompt).
-    const codexPath = resolveCommandPath("codex");
-    const result = spawnSync(codexPath ?? "codex", ["exec", fullPrompt], {
-      cwd,
-      encoding: "utf-8",
-      maxBuffer: 1024 * 1024,
-      shell: !codexPath,
-    });
-    if (result.status !== 0) {
-      const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
-      throw new Error(String(msg));
-    }
-    return (result.stdout ?? "").trim();
+    return runCodexExec(fullPrompt, cwd);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
