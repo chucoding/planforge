@@ -24,7 +24,11 @@ const DEFAULT_CLAUDE_MD = `# CLAUDE.md
 Claude project context. Run 'claude /init' after signing in, or edit this file.
 `;
 
-export type ProviderInstallChoice = "claude" | "codex" | "both" | "skip";
+/** First-step choice: which provider to install (one at a time), or none. */
+export type FirstProviderChoice = "claude" | "codex" | "no";
+
+/** After Complete UI: install the other provider, finish, or finish and skip Claude init. */
+export type AfterCompleteChoice = "install_other" | "finish" | "finish_skip_claude";
 
 function ask(question: string, defaultVal: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
@@ -38,42 +42,67 @@ function ask(question: string, defaultVal: string): Promise<string> {
 }
 
 /**
- * Show provider status and prompt to install missing. Returns skip when non-TTY.
+ * First prompt: install one missing provider or no. Returns "no" when non-TTY.
  */
-export async function promptProviderInstall(
+async function promptFirstProvider(
   hasClaude: boolean,
   hasCodex: boolean
-): Promise<ProviderInstallChoice> {
+): Promise<FirstProviderChoice> {
   if (!process.stdin.isTTY) {
-    return "skip";
+    return "no";
   }
 
   console.log("\nPlanForge init – provider check\n");
   console.log(`  Claude CLI   ${hasClaude ? "installed" : "not found"}  (recommended for /p planning)`);
   console.log(`  Codex CLI    ${hasCodex ? "installed" : "not found"}  (recommended for /i implementation)\n`);
 
-  if (hasClaude && hasCodex) {
-    return "skip";
+  if (hasClaude && !hasCodex) {
+    const raw = await ask(`Install Codex? (1) Yes (2) No`, "2");
+    const n = raw === "" ? 2 : parseInt(raw, 10);
+    return n === 1 ? "codex" : "no";
   }
+  if (!hasClaude && hasCodex) {
+    const raw = await ask(`Install Claude? (1) Yes (2) No`, "2");
+    const n = raw === "" ? 2 : parseInt(raw, 10);
+    return n === 1 ? "claude" : "no";
+  }
+  if (!hasClaude && !hasCodex) {
+    console.log("Which one to install first?");
+    console.log(`  1) Claude  (install ${CLAUDE_PKG})`);
+    console.log(`  2) Codex   (install ${CODEX_PKG})\n`);
+    const raw = await ask("Choice [1-2]", "1");
+    const n = raw === "" ? 1 : parseInt(raw, 10);
+    return n === 2 ? "codex" : "claude";
+  }
+  return "no";
+}
 
-  console.log("Install missing providers?");
-  const line1 = hasClaude
-    ? "  1) Claude                    (already installed)"
-    : `  1) Claude                    (install ${CLAUDE_PKG})`;
-  const line2 = hasCodex
-    ? "  2) Codex                     (already installed)"
-    : `  2) Codex                     (install ${CODEX_PKG})`;
-  console.log(line1);
-  console.log(line2);
-  console.log("  3) Install all missing");
-  console.log("  4) Skip – continue without   (use later)\n");
-
-  const raw = await ask("Choice [1-4]", "4");
-  const n = raw === "" ? 4 : parseInt(raw, 10);
-  if (n === 1) return "claude";
-  if (n === 2) return "codex";
-  if (n === 3) return "both";
-  return "skip";
+/**
+ * After Complete UI: install the other provider or finish. When both installed and we just added Codex (had Claude), offer to skip Claude setup.
+ */
+async function promptAfterComplete(
+  hasClaude: boolean,
+  hasCodex: boolean,
+  justInstalledCodexAndHadClaude: boolean
+): Promise<AfterCompleteChoice> {
+  if (!process.stdin.isTTY) {
+    return "finish";
+  }
+  if (hasClaude && hasCodex) {
+    if (justInstalledCodexAndHadClaude) {
+      console.log("Continue with init (run claude /init)? (1) Yes (2) No, skip Claude setup for now\n");
+      const raw = await ask("Choice [1-2]", "1");
+      const n = raw === "" ? 1 : parseInt(raw, 10);
+      return n === 1 ? "finish" : "finish_skip_claude";
+    }
+    console.log("Both providers are ready. Continuing with init.\n");
+    return "finish";
+  }
+  const other = !hasClaude ? "Claude" : "Codex";
+  console.log(`Install ${other} too? (1) Yes (2) No, finish\n`);
+  const raw = await ask("Choice [1-2]", "2");
+  const n = raw === "" ? 2 : parseInt(raw, 10);
+  return n === 1 ? "install_other" : "finish";
 }
 
 function installProviderPackage(pkg: string): boolean {
@@ -92,24 +121,57 @@ export async function runInit(args: string[]): Promise<void> {
   try {
     let hasClaude = checkClaude();
     let hasCodex = checkCodex();
+    const hasClaudeAtStart = hasClaude;
     let justInstalledClaude = false;
+    let installedClaudeThisRun = false;
+    let installedCodexThisRun = false;
+    let finishedWithCodexOnly = false;
 
     if (!skipProviderInstall && (!hasClaude || !hasCodex)) {
-      const choice = await promptProviderInstall(hasClaude, hasCodex);
-      if (choice === "claude" && !hasClaude) {
-        justInstalledClaude = installProviderPackage(CLAUDE_PKG);
-        hasClaude = checkClaude();
-      } else if (choice === "codex" && !hasCodex) {
-        installProviderPackage(CODEX_PKG);
-        hasCodex = checkCodex();
-      } else if (choice === "both") {
-        if (!hasClaude) {
+      for (;;) {
+        const first = await promptFirstProvider(hasClaude, hasCodex);
+        if (first === "no") {
+          break;
+        }
+        if (first === "claude" && !hasClaude) {
           justInstalledClaude = installProviderPackage(CLAUDE_PKG);
           hasClaude = checkClaude();
-        }
-        if (!hasCodex) {
+          installedClaudeThisRun = true;
+          console.log("\nComplete. Claude is ready.\n");
+        } else if (first === "codex" && !hasCodex) {
           installProviderPackage(CODEX_PKG);
           hasCodex = checkCodex();
+          installedCodexThisRun = true;
+          console.log("\nComplete. Codex is ready.\n");
+        }
+
+        const justInstalledCodexAndHadClaude =
+          hasClaudeAtStart && installedCodexThisRun && !installedClaudeThisRun;
+        const next = await promptAfterComplete(
+          hasClaude,
+          hasCodex,
+          justInstalledCodexAndHadClaude
+        );
+        if (next === "finish" || next === "finish_skip_claude") {
+          if (next === "finish_skip_claude") {
+            finishedWithCodexOnly = true;
+          }
+          break;
+        }
+        if (next === "install_other" && !hasClaude) {
+          justInstalledClaude = installProviderPackage(CLAUDE_PKG);
+          hasClaude = checkClaude();
+          installedClaudeThisRun = true;
+          console.log("\nComplete. Claude is ready.\n");
+        } else if (next === "install_other" && !hasCodex) {
+          installProviderPackage(CODEX_PKG);
+          hasCodex = checkCodex();
+          installedCodexThisRun = true;
+          console.log("\nComplete. Codex is ready.\n");
+        }
+        if (hasClaude && hasCodex) {
+          console.log("Both providers are ready. Continuing with init.\n");
+          break;
         }
       }
     }
@@ -119,7 +181,7 @@ export async function runInit(args: string[]): Promise<void> {
       spawnSync("claude", [], { stdio: "inherit", cwd: projectRoot, shell: true });
     }
 
-    if (hasClaude) {
+    if (hasClaude && !finishedWithCodexOnly) {
       try {
         runCommand("claude", ["/init"], projectRoot);
       } catch (err) {
