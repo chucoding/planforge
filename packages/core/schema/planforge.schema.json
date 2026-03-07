@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "PlanForge Config",
+  "type": "object",
+  "properties": {
+    "providers": {
+      "type": "object",
+      "properties": {
+        "claude": { "type": "object" },
+        "codex": { "type": "object" }
+      }
+    },
+    "plansDir": { "type": "string", "default": ".cursor/plans" }
+  }
+}

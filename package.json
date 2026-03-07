@@ -1,0 +1,11 @@
+{
+  "name": "planforge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Bring your own AI to Cursor",
+  "scripts": {
+    "bootstrap": "bash scripts/bootstrap.sh",
+    "build": "pnpm -r build"
+  },
+  "devDependencies": {}
+}

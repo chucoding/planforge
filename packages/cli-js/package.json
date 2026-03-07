@@ -1,0 +1,19 @@
+{
+  "name": "@planforge/cli",
+  "version": "0.1.0",
+  "description": "PlanForge CLI - Bring your own AI to Cursor",
+  "bin": {
+    "planforge": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

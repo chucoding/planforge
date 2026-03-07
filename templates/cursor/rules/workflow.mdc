@@ -1,0 +1,9 @@
+---
+description: PlanForge workflow rules
+globs:
+alwaysApply: false
+---
+
+# PlanForge Workflow
+
+(Workflow rules for plan → implement flow.)
