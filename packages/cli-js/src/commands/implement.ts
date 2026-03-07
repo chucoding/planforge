@@ -205,7 +205,7 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
         console.log("Written:", relPath);
       }
     }
-    console.log(result);
+    // Result was already streamed to terminal by the provider
   } catch (err) {
     console.error("Implement failed:", (err as Error).message);
     process.exit(1);

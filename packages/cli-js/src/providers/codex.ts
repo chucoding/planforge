@@ -3,7 +3,7 @@
  */
 
 import { randomBytes } from "crypto";
-import { spawnSync } from "child_process";
+import { spawnSync, spawn } from "child_process";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { readFile } from "fs/promises";
@@ -57,6 +57,68 @@ function runCodexExec(fullPrompt: string, cwd: string): string {
     throw new Error(String(msg));
   }
   return (result.stdout ?? "").trim();
+}
+
+/**
+ * Run "codex exec" with streaming: forward stdout/stderr to the current process so the user
+ * sees logs in real time (e.g. in Cursor chat terminal). Returns collected stdout when done.
+ */
+function runCodexExecStreaming(fullPrompt: string, cwd: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const opts = { cwd };
+
+    if (process.platform === "win32") {
+      const tempPath = join(tmpdir(), "planforge-" + randomBytes(8).toString("hex") + ".txt");
+      writeFileSync(tempPath, fullPrompt, "utf-8");
+      const escapedPath = tempPath.replace(/'/g, "''");
+      const script = `codex exec (Get-Content -Raw -LiteralPath '${escapedPath}')`;
+      const child = spawn("powershell", ["-NoProfile", "-Command", script], {
+        ...opts,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      child.on("close", (code) => {
+        try {
+          unlinkSync(tempPath);
+        } catch {
+          // ignore
+        }
+        if (code !== 0) {
+          reject(new Error("Codex exited with code " + code));
+          return;
+        }
+        resolve(Buffer.concat(chunks).toString("utf-8").trim());
+      });
+      child.stdout?.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+        process.stdout.write(chunk);
+      });
+      child.stderr?.on("data", (chunk: Buffer) => {
+        process.stderr.write(chunk);
+      });
+      return;
+    }
+
+    const child = spawn("codex", ["exec", fullPrompt], {
+      ...opts,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    child.stdout?.on("data", (chunk: Buffer) => {
+      chunks.push(chunk);
+      process.stdout.write(chunk);
+    });
+    child.stderr?.on("data", (chunk: Buffer) => {
+      process.stderr.write(chunk);
+    });
+    child.on("close", (code) => {
+      if (code !== 0) {
+        reject(new Error("Codex exited with code " + code));
+        return;
+      }
+      resolve(Buffer.concat(chunks).toString("utf-8").trim());
+    });
+    child.on("error", (err) => reject(err));
+  });
 }
 
 const DEFAULT_PLANNER_FALLBACK =
@@ -172,7 +234,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
   }
 
   try {
-    return runCodexExec(fullPrompt, cwd);
+    return await runCodexExecStreaming(fullPrompt, cwd);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
