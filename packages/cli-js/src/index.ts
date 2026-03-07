@@ -8,6 +8,7 @@ import { runInit } from "./commands/init.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runInstall } from "./commands/install.js";
 import { runPlan } from "./commands/plan.js";
+import { runImplement } from "./commands/implement.js";
 import { runConfigShow, runConfigSuggest } from "./commands/config.js";
 
 const program = new Command();
@@ -42,10 +43,18 @@ program
 
 program
   .command("plan")
-  .description("Generate a development plan with Claude and save to .cursor/plans")
+  .description("Generate a development plan and save to .cursor/plans (uses planner from planforge.json)")
   .argument("[goal...]", "Planning goal (e.g. design auth refresh token)")
   .action(async (goalParts: string[]) => {
     await runPlan(goalParts);
+  });
+
+program
+  .command("implement")
+  .description("Run implementation (uses implementer from planforge.json)")
+  .argument("[prompt...]", "Implementation prompt or task")
+  .action(async (promptParts: string[]) => {
+    await runImplement(promptParts);
   });
 
 const configCmd = program

@@ -53,3 +53,45 @@ export async function runPlan(
     throw new Error("Claude plan failed: " + msg);
   }
 }
+
+const DEFAULT_IMPLEMENTER_FALLBACK =
+  "Implement the user request. Produce code or concrete changes as requested.";
+
+/**
+ * Run Claude to perform implementation. Returns implementation output (e.g. code or instructions).
+ */
+export async function runImplement(
+  prompt: string,
+  opts?: { cwd?: string; planPath?: string; systemPromptPath?: string }
+): Promise<string> {
+  const cwd = opts?.cwd ?? process.cwd();
+  const templatesRoot = getTemplatesRoot();
+  const repoRoot = dirname(templatesRoot);
+  const defaultPromptPath = resolve(repoRoot, "packages", "core", "prompts", "implementer-system.md");
+
+  let fullPrompt: string;
+  try {
+    const systemPrompt = await readFile(
+      opts?.systemPromptPath ?? defaultPromptPath,
+      "utf-8"
+    );
+    fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser request: " + prompt;
+  } catch {
+    fullPrompt = DEFAULT_IMPLEMENTER_FALLBACK + "\n\nUser request: " + prompt;
+  }
+
+  try {
+    const out = execSync("claude", {
+      encoding: "utf-8",
+      input: fullPrompt,
+      cwd,
+      maxBuffer: 1024 * 1024,
+    });
+    return typeof out === "string" ? out.trim() : String(out).trim();
+  } catch (err) {
+    const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
+      ?? (err as { stderr?: string }).stderr
+      ?? (err as Error).message;
+    throw new Error("Claude implement failed: " + msg);
+  }
+}

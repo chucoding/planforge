@@ -1,12 +1,13 @@
 /**
- * planforge plan <goal> - generate .cursor/plans/<summary>-<hash>.plan.md via Claude
+ * planforge plan <goal> - generate .cursor/plans/<summary>-<hash>.plan.md via configured planner provider
  */
 
 import fs from "fs-extra";
 import { resolve } from "path";
 import { randomBytes } from "crypto";
 import { getProjectRoot, getPlansDir } from "../utils/paths.js";
-import { checkClaude, runPlan as runClaudePlan } from "../providers/claude.js";
+import { loadConfig } from "../config/load.js";
+import { getPlannerRunner } from "../providers/registry.js";
 
 function slugify(text: string): string {
   return text
@@ -32,13 +33,21 @@ export async function runPlan(args: string[]): Promise<void> {
   const cwd = process.cwd();
   const projectRoot = getProjectRoot(cwd);
 
-  if (!checkClaude()) {
-    console.error("Claude CLI not found. Install Claude CLI to use planforge plan.");
+  const config = await loadConfig(projectRoot);
+  const runner = getPlannerRunner(config.planner.provider);
+
+  if (!runner) {
+    console.error(`Unknown planner provider: ${config.planner.provider}. Check planforge.json.`);
+    process.exit(1);
+  }
+
+  if (!runner.check()) {
+    console.error(`${config.planner.provider} CLI not found. Install the provider CLI to use planforge plan.`);
     process.exit(1);
   }
 
   try {
-    const planBody = await runClaudePlan(goal, { cwd: projectRoot });
+    const planBody = await runner.runPlan(goal, { cwd: projectRoot });
     const slug = slugify(goal);
     const hash = shortHash();
     const plansDir = getPlansDir(projectRoot);
