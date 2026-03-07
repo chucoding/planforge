@@ -3,6 +3,7 @@
  */
 
 import fs from "fs-extra";
+import { spawnSync } from "child_process";
 import { resolve, dirname } from "path";
 import { readFile } from "fs/promises";
 import { getProjectRoot } from "../utils/paths.js";
@@ -13,6 +14,8 @@ import { loadConfig } from "../config/load.js";
 import { getImplementerRunner } from "../providers/registry.js";
 
 const MAX_CODE_CONTEXT_CHARS = 12000;
+const MAX_RECENT_COMMITS_PER_FILE_CHARS = 400;
+const MAX_RECENT_COMMITS_PER_FILE_COUNT = 5;
 
 /** Extract (relative path, content) from implement output: lines like "### 1) `path/to/file`" followed by a fenced code block. */
 function extractFilesFromOutput(text: string): { path: string; content: string }[] {
@@ -92,6 +95,44 @@ async function buildCodeContext(
   return parts.join("\n");
 }
 
+/** Run git log --oneline -n 1 for a path. Returns one-line message or null. */
+function runGitLogOneline(projectRoot: string, relPath: string): string | null {
+  try {
+    const result = spawnSync("git", ["log", "--oneline", "-n", "1", "--", relPath], {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    if (result.status !== 0) return null;
+    return (result.stdout ?? "").trim();
+  } catch {
+    return null;
+  }
+}
+
+/** Build "Recent commit (per file)" string from filesToChange (non-glob, up to 5 files), capped at 400 chars. */
+function buildRecentCommitsForFiles(projectRoot: string, filesToChange: string[]): string | undefined {
+  const root = resolve(projectRoot);
+  const lines: string[] = [];
+  let count = 0;
+  for (const rel of filesToChange) {
+    if (count >= MAX_RECENT_COMMITS_PER_FILE_COUNT || isGlob(rel)) continue;
+    const abs = resolve(root, rel);
+    if (!abs.startsWith(root)) continue;
+    const msg = runGitLogOneline(projectRoot, rel);
+    if (msg) {
+      lines.push(`${rel}: ${msg}`);
+      count++;
+    }
+  }
+  if (lines.length === 0) return undefined;
+  let out = lines.join("\n");
+  if (out.length > MAX_RECENT_COMMITS_PER_FILE_CHARS) {
+    out = out.slice(0, MAX_RECENT_COMMITS_PER_FILE_CHARS) + "\n...(truncated)";
+  }
+  return out;
+}
+
 export async function runImplement(args: string[], opts?: ImplementCliOpts): Promise<void> {
   const prompt = args.join(" ").trim();
   if (!prompt) {
@@ -140,6 +181,8 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
   const codeContext =
     filesToChange.length > 0 ? await buildCodeContext(projectRoot, filesToChange) : undefined;
   const projectContext = getProjectContext(projectRoot);
+  const recentCommitsPerFile =
+    filesToChange.length > 0 ? buildRecentCommitsForFiles(projectRoot, filesToChange) : undefined;
 
   try {
     const result = await runner.runImplement(prompt, {
@@ -149,6 +192,7 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
       filesToChange: filesToChange.length > 0 ? filesToChange : undefined,
       codeContext,
       projectContext,
+      recentCommitsPerFile,
     });
     const extracted = extractFilesFromOutput(result);
     const root = resolve(projectRoot);

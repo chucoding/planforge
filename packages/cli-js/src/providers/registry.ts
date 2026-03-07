@@ -27,6 +27,8 @@ export interface ImplementOpts {
   codeContext?: string;
   /** Project context from AGENTS.md (or CLAUDE.md). Capped in size. */
   projectContext?: string;
+  /** Recent commit (oneline) per file for files to focus on. Capped in size. */
+  recentCommitsPerFile?: string;
 }
 
 export interface PlannerRunner {

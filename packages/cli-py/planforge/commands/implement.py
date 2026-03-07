@@ -1,6 +1,7 @@
 """planforge implement <prompt> - run implementation via configured implementer provider."""
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -13,6 +14,8 @@ from planforge.providers.codex import check_codex, run_implement as codex_run_im
 from planforge.providers.claude import check_claude, run_implement as claude_run_implement
 
 MAX_CODE_CONTEXT_CHARS = 12000
+MAX_RECENT_COMMITS_PER_FILE_CHARS = 400
+MAX_RECENT_COMMITS_PER_FILE_COUNT = 5
 
 BLOCK_RE = re.compile(
     r"(?:###\s*\d+\)\s*)?`([^`]+)`\s*[\r\n]+\s*```[\w]*\r?\n([\s\S]*?)```",
@@ -58,6 +61,44 @@ def _build_code_context(project_root: str, files_to_change: list[str]) -> str | 
         except (OSError, ValueError):
             pass
     return "\n".join(parts) if parts else None
+
+
+def _run_git_log_oneline(project_root: str, rel_path: str) -> str | None:
+    try:
+        result = subprocess.run(
+            ["git", "log", "--oneline", "-n", "1", "--", rel_path],
+            cwd=project_root,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if result.returncode != 0:
+            return None
+        return (result.stdout or "").strip()
+    except (subprocess.TimeoutExpired, FileNotFoundError, OSError):
+        return None
+
+
+def _build_recent_commits_for_files(project_root: str, files_to_change: list[str]) -> str | None:
+    root = Path(project_root)
+    lines = []
+    count = 0
+    for rel in files_to_change:
+        if count >= MAX_RECENT_COMMITS_PER_FILE_COUNT or _is_glob(rel):
+            continue
+        abs_path = (root / rel).resolve()
+        if not str(abs_path).startswith(str(root.resolve())):
+            continue
+        msg = _run_git_log_oneline(project_root, rel)
+        if msg:
+            lines.append(f"{rel}: {msg}")
+            count += 1
+    if not lines:
+        return None
+    out = "\n".join(lines)
+    if len(out) > MAX_RECENT_COMMITS_PER_FILE_CHARS:
+        out = out[:MAX_RECENT_COMMITS_PER_FILE_CHARS] + "\n...(truncated)"
+    return out
 
 
 def _get_implementer_runner(provider: str):
@@ -116,6 +157,9 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
     files_to_change = opts.get("files") or parse_files_from_plan(plan_content)
     code_context = _build_code_context(project_root, files_to_change) if files_to_change else None
     project_context = get_project_context(project_root)
+    recent_commits_per_file = (
+        _build_recent_commits_for_files(project_root, files_to_change) if files_to_change else None
+    )
     run_opts = {
         "cwd": project_root,
         "context": context,
@@ -123,6 +167,7 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
         "filesToChange": files_to_change if files_to_change else None,
         "codeContext": code_context,
         "projectContext": project_context,
+        "recentCommitsPerFile": recent_commits_per_file,
     }
     try:
         result = run(prompt, run_opts)

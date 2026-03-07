@@ -74,6 +74,8 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
     files_to_change = opts.get("filesToChange") or []
     if files_to_change:
         body += "\n\n---\n\nFiles to focus on:\n" + "\n".join(files_to_change)
+    if (opts.get("recentCommitsPerFile") or "").strip():
+        body += "\n\n---\n\nRecent commit (per file):\n" + (opts["recentCommitsPerFile"] or "").strip()
     if (opts.get("codeContext") or "").strip():
         body += "\n\n---\n\nRelevant file contents:\n" + (opts["codeContext"] or "").strip()
     full_prompt = body + "\n\n---\n\nUser request: " + prompt

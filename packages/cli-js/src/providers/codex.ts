@@ -141,6 +141,9 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     if (opts?.filesToChange?.length) {
       body += "\n\n---\n\nFiles to focus on:\n" + opts.filesToChange.join("\n");
     }
+    if (opts?.recentCommitsPerFile?.trim()) {
+      body += "\n\n---\n\nRecent commit (per file):\n" + opts.recentCommitsPerFile.trim();
+    }
     if (opts?.codeContext?.trim()) {
       body += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
     }
@@ -158,6 +161,9 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     }
     if (opts?.filesToChange?.length) {
       fallback += "\n\n---\n\nFiles to focus on:\n" + opts.filesToChange.join("\n");
+    }
+    if (opts?.recentCommitsPerFile?.trim()) {
+      fallback += "\n\n---\n\nRecent commit (per file):\n" + opts.recentCommitsPerFile.trim();
     }
     if (opts?.codeContext?.trim()) {
       fallback += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();

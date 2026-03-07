@@ -10,7 +10,7 @@ Plan and Implement commands build a single **fullPrompt** sent to the provider (
 
 1. **System prompt** — `packages/core/prompts/planner-system.md` (or `--system-prompt` if added).
 2. **Project context** (optional) — Contents of `AGENTS.md` or `CLAUDE.md` from project root. Capped in size. Omitted if file is missing.
-3. **Repository context** (optional) — Git status, `git diff --stat`, `git diff --cached --stat`, and top-level directory list. When a goal is provided and ripgrep (`rg`) is available, a goal-based file list is appended (“## ripgrep (goal-related)”). Omitted if not a git repo. Total size capped; if `rg` is not installed or fails, only git/dirs are included.
+3. **Repository context** (optional) — Git status, `git diff --stat`, `git diff --cached --stat`, and top-level directory list. A recent-commits block (“## recent commits”) is appended using `git log --oneline -n 10`. When a goal is provided and ripgrep (`rg`) is available, a goal-based file list is appended (“## ripgrep (goal-related)”), and goal-related files’ recent two commits are appended (“## recent changes (goal-related files)”). Omitted if not a git repo. Total size capped; if `rg` is not installed or fails, only git/dirs and recent commits are included.
 4. **Conversation context** (optional) — From `--context-file` (e.g. `.cursor/chat-context.txt`) or `--context`.
 5. **User goal** — The planning goal string.
 
@@ -23,10 +23,11 @@ So: `[ system ]` + (optional) `[ Project context ]` + (optional) `[ Repository c
 3. **Conversation context** (optional) — Same as plan (`--context-file` / `--context`).
 4. **Current plan** (optional) — Plan body when `--plan-file` is set or when a plan is auto-selected (see below). Inserted as “Current plan (follow this):”.
 5. **Files to focus on** (optional) — List of file paths. From the plan’s “Files Likely to Change” section (parsed automatically) or from `--files`. When present, the implementer is instructed to treat these as primary edit targets.
-6. **Relevant file contents** (optional) — Contents of those files (non-glob paths only), concatenated and capped in total size.
-7. **User request** — The implementation prompt.
+6. **Recent commit (per file)** (optional) — For each of those files (non-glob, up to a limit), the most recent commit message (`git log --oneline -n 1`). Capped in total size.
+7. **Relevant file contents** (optional) — Contents of those files (non-glob paths only), concatenated and capped in total size.
+8. **User request** — The implementation prompt.
 
-So: `[ system ]` + (optional) `[ Project context ]` + (optional) `[ Conversation context ]` + (optional) `[ Current plan ]` + (optional) `[ Files to focus on ]` + (optional) `[ Relevant file contents ]` + `[ User request ]`.
+So: `[ system ]` + (optional) `[ Project context ]` + (optional) `[ Conversation context ]` + (optional) `[ Current plan ]` + (optional) `[ Files to focus on ]` + (optional) `[ Recent commit (per file) ]` + (optional) `[ Relevant file contents ]` + `[ User request ]`.
 
 ### Which plan is used for implement?
 
