@@ -1,0 +1,36 @@
+---
+description: PlanForge – Node (cli-js) and Python (cli-py) CLIs must stay in sync
+globs: packages/cli-js/**/*.ts,packages/cli-py/**/*.py
+alwaysApply: false
+---
+
+# Node + Python Symmetry (cli-js / cli-py)
+
+When you change one CLI (Node or Python), **update the other to match**.
+
+## Scope
+
+- **packages/cli-js**: TypeScript CLI (init, doctor, plan, implement, config, install).
+- **packages/cli-py**: Python CLI with the same commands and semantics under `planforge/`.
+
+Corresponding areas:
+
+| Node (cli-js)              | Python (cli-py)                |
+|----------------------------|---------------------------------|
+| src/commands/*.ts          | planforge/commands/*.py        |
+| src/providers/claude.ts, codex.ts | planforge/providers/claude.py, codex.py |
+| src/utils/shell.ts, paths.ts     | planforge/utils/shell.py, paths.py     |
+| src/templates/install.ts   | planforge/templates/install.py  |
+| src/config/*.ts            | planforge config (if present)   |
+
+## What to mirror
+
+- **New command or subcommand** → add to both `index.ts` (Node) and `cli.py` (Python).
+- **Change in command behavior** (e.g. init flow, doctor checks, plan/implement options) → same UX and semantics in both.
+- **Provider API or check** (e.g. runPlan, runImplement, path resolution) → same logic in both codebases.
+- **Config / presets** (planforge.json, getPresetForProviders) → keep behavior aligned; Python may call Node or reimplement the same rules.
+
+## Checklist
+
+- [ ] After editing a command or provider in **cli-js**, update the corresponding file in **cli-py** (and vice versa).
+- [ ] CLI surface (subcommands, flags, exit codes, messages) stays consistent between `planforge` (Node) and `planforge` (Python).

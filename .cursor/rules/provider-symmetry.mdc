@@ -1,0 +1,26 @@
+---
+description: PlanForge – Codex and Claude providers must stay in sync
+globs: packages/cli-js/src/providers/**/*.ts,packages/cli-js/src/commands/plan.ts,packages/cli-js/src/commands/implement.ts
+alwaysApply: false
+---
+
+# Provider Symmetry (Codex + Claude)
+
+When you change one provider (Codex or Claude), **update the other in the same way**.
+
+## Scope
+
+- **providers/claude.ts** and **providers/codex.ts**: Same shape for `check*`, `runPlan`, `runImplement` (signatures, options, error handling).
+- **providers/registry.ts**: Both providers registered for planner and implementer; add or change behavior for both.
+- **commands/plan.ts** / **commands/implement.ts**: No provider-specific branches unless necessary; use the registry so both providers are treated the same.
+
+## What to mirror
+
+- New option or argument in `runPlan` / `runImplement` (e.g. `systemPromptPath`, `cwd`) → add to both Claude and Codex.
+- Change in how the CLI is invoked (e.g. non-interactive exec, path resolution, `shell`) → apply the same pattern to both.
+- New export or helper (e.g. `CLIENT_NPM_PACKAGE`, fallback prompt) → both files.
+
+## Checklist
+
+- [ ] After editing `claude.ts`, check `codex.ts` for the same change (and vice versa).
+- [ ] Registry and commands use a single code path for both providers; no one-off logic for only Codex or only Claude.

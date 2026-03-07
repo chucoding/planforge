@@ -1,0 +1,29 @@
+---
+description: PlanForge – code must work on Windows and Mac
+globs: packages/cli-js/**/*.ts,templates/**/*.sh,templates/**/*.py
+alwaysApply: false
+---
+
+# Cross-Platform (Windows + Mac)
+
+All code changes must work on **Windows** and **Mac**.
+
+## Paths
+
+- Use `path.join()` / `resolve()` from `path`; avoid hardcoded `/` or `\`.
+- Use `process.platform === "win32"` when behavior must differ; keep the other platform in mind.
+
+## Shell / Process
+
+- **utils/shell.ts**: Prefer `spawnSync` with explicit args; use `shell: true` only when necessary (e.g. to resolve npm global `.cmd`). On Windows, long arguments must not be split by the shell—prefer resolving the executable path and spawning without shell when passing long prompts.
+- Use `resolveCommandPath(cmd)` so the real executable (e.g. `codex.cmd` on Windows) is used; prefer `.cmd` on Windows when `where` returns multiple entries.
+- Test both: PowerShell (Windows) and bash/zsh (Mac).
+
+## Scripts (templates)
+
+- `*.sh`: Use POSIX-compatible commands and no bash-only features if the script may run on Windows (e.g. via Git Bash or WSL). Prefer `planforge` CLI so logic stays in Node and works everywhere.
+
+## Checklist
+
+- [ ] No Windows-only or Mac-only assumptions (paths, line endings, shell quoting).
+- [ ] If you add a platform branch, the other platform path is implemented and tested in mind.
