@@ -5,6 +5,7 @@
 import fs from "fs-extra";
 import { resolve } from "path";
 import { randomBytes } from "crypto";
+import { spawnSync } from "child_process";
 import { romanize } from "@daun_jung/korean-romanizer";
 import { getProjectRoot, getPlansDir } from "../utils/paths.js";
 import { loadConfig } from "../config/load.js";
@@ -114,6 +115,12 @@ export async function runPlan(args: string[]): Promise<void> {
     const filePath = resolve(plansDir, filename);
     await fs.writeFile(filePath, planBody, "utf-8");
     console.log("Created:", filePath);
+    // Open the plan file in Cursor for review (user can then run /i when ready)
+    try {
+      spawnSync("cursor", [filePath], { stdio: "ignore", windowsHide: true });
+    } catch {
+      /* cursor not in PATH or open failed; leave as-is */
+    }
   } catch (err) {
     console.error("Plan generation failed:", (err as Error).message);
     process.exit(1);
