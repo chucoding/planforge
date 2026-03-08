@@ -1,6 +1,6 @@
 {
   "name": "planforge",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "PlanForge CLI - Bring your own AI to Cursor",
   "keywords": ["cursor", "claude", "codex", "ai", "cli", "planning", "planforge"],
@@ -11,7 +11,7 @@
   },
   "bugs": "https://github.com/planforge/planforge/issues",
   "homepage": "https://github.com/planforge/planforge#readme",
-  "files": ["dist"],
+  "files": ["dist", "README.md"],
   "bin": {
     "planforge": "dist/index.js"
   },
