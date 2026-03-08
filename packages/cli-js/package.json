@@ -1,5 +1,5 @@
 {
-  "name": "@planforge/cli",
+  "name": "planforge",
   "version": "0.1.0",
   "type": "module",
   "description": "PlanForge CLI - Bring your own AI to Cursor",

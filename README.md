@@ -66,7 +66,7 @@ Plan names use goal-based slugs. Korean and English are supported, with romaniza
 ### Node CLI
 
 ```bash
-npm install -g @planforge/cli
+npm install -g planforge
 ```
 
 Or from this repo:
