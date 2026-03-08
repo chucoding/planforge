@@ -72,7 +72,7 @@ npm install -g planforge
 Or from this repo:
 
 ```bash
-pnpm run build:cli && pnpm -C packages/cli-js link --global
+cd packages/cli-js && pnpm install && pnpm run install:global
 ```
 
 ### Python CLI

@@ -6,9 +6,7 @@ settings:
 
 importers:
 
-  .: {}
-
-  packages/cli-js:
+  .:
     dependencies:
       '@daun_jung/korean-romanizer':
         specifier: ^1.0.1

@@ -18,6 +18,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "planforge": "node dist/index.js",
+    "install:global": "pnpm run build && npm install -g .",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
