@@ -1,16 +1,16 @@
 {
   "name": "planforge",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "PlanForge CLI - Bring your own AI to Cursor",
   "keywords": ["cursor", "claude", "codex", "ai", "cli", "planning", "planforge"],
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/planforge/planforge.git"
+    "url": "https://github.com/chucoding/planforge.git"
   },
-  "bugs": "https://github.com/planforge/planforge/issues",
-  "homepage": "https://github.com/planforge/planforge#readme",
+  "bugs": "https://github.com/chucoding/planforge/issues",
+  "homepage": "https://github.com/chucoding/planforge#readme",
   "files": ["dist", "README.md"],
   "bin": {
     "planforge": "dist/index.js"
