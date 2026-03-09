@@ -2,76 +2,88 @@
 
 from pathlib import Path
 
-from rich.console import Console
-from rich.table import Table
-
 from planforge.utils.paths import get_project_root, get_plans_dir
+from planforge.utils.config import load_config
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 
 
+def _status_symbol(status: str) -> str:
+    if status == "ok":
+        return "[OK]"
+    if status == "warn":
+        return "[WARN]"
+    return "[ERROR]"
+
+
 def run_doctor(args: list[str]) -> None:
-    console = Console()
+    del args
     project_root = get_project_root()
     plans_dir = get_plans_dir(project_root)
+    config = load_config(project_root)
 
     has_claude = check_claude()
     has_codex = check_codex()
 
-    rows = []
-
-    rows.append((
+    checks: list[tuple[str, str, str]] = []
+    checks.append((
         "Claude CLI",
-        "✓" if has_claude else "?",
+        "ok" if has_claude else "warn",
         "available" if has_claude else "not found (planning /p will be limited)",
     ))
-    rows.append((
+    checks.append((
         "Codex CLI",
-        "✓" if has_codex else "?",
+        "ok" if has_codex else "warn",
         "available" if has_codex else "not found (implementation /i will be limited)",
     ))
 
-    claude_md = Path(project_root) / "CLAUDE.md"
-    has_claude_md = claude_md.exists()
-    rows.append((
+    has_claude_md = (Path(project_root) / "CLAUDE.md").exists()
+    checks.append((
         "CLAUDE.md",
-        "✓" if has_claude_md else ("?" if has_claude else "✓"),
+        "ok" if has_claude_md else ("warn" if has_claude else "ok"),
         "exists" if has_claude_md else ("missing (run claude /init)" if has_claude else "n/a"),
     ))
 
-    agents_md = Path(project_root) / "AGENTS.md"
-    has_agents_md = agents_md.exists()
-    rows.append((
+    has_agents_md = (Path(project_root) / "AGENTS.md").exists()
+    checks.append((
         "AGENTS.md",
-        "✓" if has_agents_md else ("?" if has_codex else "✓"),
+        "ok" if has_agents_md else ("warn" if has_codex else "ok"),
         "exists" if has_agents_md else ("missing" if has_codex else "n/a"),
     ))
 
-    config_path = Path(project_root) / "planforge.json"
-    has_config = config_path.exists()
-    rows.append((
+    has_config = (Path(project_root) / "planforge.json").exists()
+    checks.append((
         "planforge.json",
-        "✓" if has_config else "✗",
+        "ok" if has_config else "error",
         "exists" if has_config else "missing (run planforge init)",
     ))
 
     has_plans_dir = Path(plans_dir).exists()
-    rows.append((
+    checks.append((
         ".cursor/plans",
-        "✓" if has_plans_dir else "✗",
+        "ok" if has_plans_dir else "error",
         "exists" if has_plans_dir else "missing (run planforge init)",
     ))
 
-    table = Table(show_header=True, header_style="bold")
-    table.add_column("Check", style="dim")
-    table.add_column("Status", width=4)
-    table.add_column("Message")
-    for name, status, msg in rows:
-        table.add_row(name, status, msg)
+    context_dir = config.get("contextDir") or ".cursor/context"
+    context_dir_path = Path(project_root) / context_dir
+    has_context_dir = context_dir_path.exists()
+    checks.append((
+        "contextDir",
+        "ok" if has_context_dir else "warn",
+        f"{context_dir} exists" if has_context_dir else f"{context_dir} missing (run planforge init)",
+    ))
 
-    console.print("\nPlanForge doctor\n")
-    console.print(table)
-    console.print()
+    print("\nPlanForge doctor")
+    print("  ------------------------------\n")
+    max_name = max(len(name) for name, _, _ in checks)
+    for name, status, message in checks:
+        print(f"  {_status_symbol(status)}  {name.ljust(max_name)}  {message}")
 
-    if any(r[1] == "✗" for r in rows):
+    print("")
+    if not has_claude or not has_codex:
+        print("  Run planforge init to install missing providers.")
+    print("")
+
+    if any(status == "error" for _, status, _ in checks):
         raise SystemExit(1)

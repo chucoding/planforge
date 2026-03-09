@@ -14,6 +14,7 @@ def install_templates(
     templates_root = Path(get_templates_root())
     cursor_dir = Path(project_root) / ".cursor"
     cursor_dir.mkdir(parents=True, exist_ok=True)
+    (cursor_dir / "context").mkdir(parents=True, exist_ok=True)
 
     cursor_templates = templates_root / "cursor"
     skills_src = cursor_templates / "skills"

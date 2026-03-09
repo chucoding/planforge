@@ -21,6 +21,7 @@
         "reasoning": { "type": "string", "enum": ["low", "high"] }
       }
     },
-    "plansDir": { "type": "string", "default": ".cursor/plans" }
+    "plansDir": { "type": "string", "default": ".cursor/plans" },
+    "contextDir": { "type": "string", "default": ".cursor/context" }
   }
 }

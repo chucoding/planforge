@@ -5,6 +5,7 @@
 import fs from "fs-extra";
 import { resolve } from "path";
 import { getProjectRoot, getPlansDir } from "../utils/paths.js";
+import { loadConfig } from "../config/load.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
 
@@ -32,6 +33,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
   const projectRoot = getProjectRoot(cwd);
   const plansDir = getPlansDir(projectRoot);
   const checks: Check[] = [];
+  const config = await loadConfig(projectRoot);
 
   const hasClaude = checkClaude();
   const hasCodex = checkCodex();
@@ -76,6 +78,14 @@ export async function runDoctor(_args: string[]): Promise<void> {
     name: ".cursor/plans",
     status: hasPlansDir ? "ok" : "error",
     message: hasPlansDir ? "exists" : "missing (run planforge init)",
+  });
+
+  const contextDirPath = resolve(projectRoot, config.contextDir || ".cursor/context");
+  const hasContextDir = await fs.pathExists(contextDirPath);
+  checks.push({
+    name: "contextDir",
+    status: hasContextDir ? "ok" : "warn",
+    message: hasContextDir ? `${config.contextDir} exists` : `${config.contextDir} missing (run planforge init)`,
   });
 
   console.log("\nPlanForge doctor");

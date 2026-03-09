@@ -7,6 +7,7 @@ from pathlib import Path
 
 from planforge.utils.paths import get_project_root
 from planforge.utils.config import load_config
+from planforge.utils.context import load_merged_context
 from planforge.utils.active_plan import get_active_plan_path
 from planforge.utils.plan_files import parse_files_from_plan
 from planforge.utils.project_context import get_project_context
@@ -117,19 +118,16 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
         raise SystemExit(1)
     cwd = str(Path.cwd())
     project_root = get_project_root(cwd)
-    context_parts = []
-    if opts.get("context_file"):
-        ctx_path = Path(cwd) / opts["context_file"]
-        try:
-            content = ctx_path.read_text(encoding="utf-8").strip()
-            if content:
-                context_parts.append(content)
-        except OSError as e:
-            print("Failed to read context file:", e, file=sys.stderr)
-            raise SystemExit(1)
-    if (opts.get("context") or "").strip():
-        context_parts.append(opts["context"].strip())
-    context = "\n\n".join(context_parts) if context_parts else None
+    config = load_config(project_root)
+    try:
+        context = load_merged_context(
+            cwd,
+            context_dir=opts.get("context_dir") or config.get("contextDir"),
+            inline_context=opts.get("context"),
+        )
+    except OSError as e:
+        print("Failed to load context:", e, file=sys.stderr)
+        raise SystemExit(1)
     plan_content = None
     if opts.get("plan_file"):
         plan_path = Path(cwd) / opts["plan_file"]
@@ -145,7 +143,6 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
                 plan_content = Path(active_path).read_text(encoding="utf-8")
             except OSError:
                 pass
-    config = load_config(project_root)
     provider = config["implementer"]["provider"]
     check, run = _get_implementer_runner(provider)
     if not check or not run:

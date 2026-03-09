@@ -1,9 +1,8 @@
 # Run implement command (Windows). Called from Cursor /i with user prompt as arguments.
-# If .cursor/chat-context.txt exists as a file, pass it as conversation context to the implementer.
-# Use -PathType Leaf so we only pass regular files (matches bash [ -f ... ]); passing a directory would fail.
+# If .cursor/context exists, pass it as markdown context directory.
 $ErrorActionPreference = "Stop"
-if (Test-Path -PathType Leaf ".cursor/chat-context.txt") {
-    & planforge implement --context-file .cursor/chat-context.txt @args
+if (Test-Path -PathType Container ".cursor/context") {
+    & planforge implement --context-dir .cursor/context @args
 } else {
     & planforge implement @args
 }

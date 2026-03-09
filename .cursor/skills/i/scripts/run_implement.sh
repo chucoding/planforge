@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Run implement command (uses implementer from planforge.json). Called from Cursor /i with user prompt as arguments.
-# If .cursor/chat-context.txt exists, pass it as conversation context to the implementer.
+# If .cursor/context exists, pass it as markdown context directory.
 set -e
-if [ -f .cursor/chat-context.txt ]; then
-  exec planforge implement --context-file .cursor/chat-context.txt "$@"
+if [ -d .cursor/context ]; then
+  exec planforge implement --context-dir .cursor/context "$@"
 else
   exec planforge implement "$@"
 fi
