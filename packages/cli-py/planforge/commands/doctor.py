@@ -20,7 +20,16 @@ def run_doctor(args: list[str]) -> None:
     del args
     project_root = get_project_root()
     plans_dir = get_plans_dir(project_root)
-    config = load_config(project_root)
+
+    config_path = Path(project_root) / "planforge.json"
+    has_config_file = config_path.exists()
+    config: dict | None = None
+    config_load_error: str | None = None
+    if has_config_file:
+        try:
+            config = load_config(project_root)
+        except Exception as e:
+            config_load_error = str(e)
 
     has_claude = check_claude()
     has_codex = check_codex()
@@ -51,12 +60,24 @@ def run_doctor(args: list[str]) -> None:
         "exists" if has_agents_md else ("missing" if has_codex else "n/a"),
     ))
 
-    has_config = (Path(project_root) / "planforge.json").exists()
-    checks.append((
-        "planforge.json",
-        "ok" if has_config else "error",
-        "exists" if has_config else "missing (run planforge init)",
-    ))
+    if not has_config_file:
+        checks.append((
+            "planforge.json",
+            "error",
+            "missing (run planforge init)",
+        ))
+    elif config_load_error:
+        checks.append((
+            "planforge.json",
+            "error",
+            f"invalid or unreadable ({config_load_error})",
+        ))
+    else:
+        checks.append((
+            "planforge.json",
+            "ok",
+            "exists",
+        ))
 
     has_plans_dir = Path(plans_dir).exists()
     checks.append((
@@ -65,7 +86,7 @@ def run_doctor(args: list[str]) -> None:
         "exists" if has_plans_dir else "missing (run planforge init)",
     ))
 
-    context_dir = config.get("contextDir") or ".cursor/context"
+    context_dir = (config or {}).get("contextDir") or ".cursor/context"
     context_dir_path = Path(project_root) / context_dir
     has_context_dir = context_dir_path.exists()
     checks.append((
