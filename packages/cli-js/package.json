@@ -11,6 +11,9 @@
   },
   "bugs": "https://github.com/chucoding/planforge/issues",
   "homepage": "https://github.com/chucoding/planforge#readme",
+  "publishConfig": {
+    "access": "public"
+  },
   "files": ["dist", "README.md"],
   "bin": {
     "planforge": "dist/index.js"
