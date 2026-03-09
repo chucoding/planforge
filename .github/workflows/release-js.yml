@@ -33,6 +33,7 @@ jobs:
         run: npm install
 
       - name: Verify tag version matches package version
+        if: github.event_name == 'push'
         shell: bash
         run: |
           TAG_VERSION="${GITHUB_REF_NAME#v}"
