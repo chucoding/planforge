@@ -1,9 +1,5 @@
 # Run plan command (Windows). Called from Cursor /p with user goal as arguments.
-# If .cursor/context exists, pass it as markdown context directory.
+# Context dir is taken from planforge.json (contextDir) or CLI default; do not hard-code it here.
 $ErrorActionPreference = "Stop"
-if (Test-Path -PathType Container ".cursor/context") {
-    & planforge plan --context-dir .cursor/context @args
-} else {
-    & planforge plan @args
-}
+& planforge plan @args
 exit $LASTEXITCODE
