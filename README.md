@@ -49,6 +49,8 @@ Plan names use goal-based slugs. Korean and English are supported, with romaniza
 | `/p` | Planning | `planforge plan "<goal>"` via `.cursor/skills/p` |
 | `/i` | Implementation | `planforge implement "<prompt>"` via `.cursor/skills/i` |
 
+Both skills are script-first by design: they must execute the bundled `.cursor/skills/*/scripts/*.sh` commands, and must not directly author plan/code as a fallback.
+
 ### CLI
 
 | Command | Description |
