@@ -31,7 +31,7 @@ Then use `/p` for planning and `/i` for implementation in Cursor, or run:
 
 | Command | Description |
 | ------- | ----------- |
-| `planforge init` | Detect providers, create `planforge.json`, install Cursor skills/rules. Use `--skip-provider-install` to skip provider install. |
+| `planforge init` | Shows provider check (Claude/Codex) first; then detect providers, create `planforge.json`, install Cursor skills/rules. Use `--skip-provider-install` to skip provider prompt. |
 | `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/`. |
 | `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. |
 | `planforge config show` | Print current `planforge.json`. |
