@@ -20,10 +20,17 @@ Customize this file to give the implementer (/i) relevant project context.
 def run_init(args: list[str]) -> None:
     cwd = Path.cwd()
     project_root = get_project_root(str(cwd))
+    skip_provider_install = "--skip-provider-install" in args
 
     try:
         has_claude = check_claude()
         has_codex = check_codex()
+
+        if not skip_provider_install:
+            print("\nPlanForge init - provider check\n")
+            print(f"  Claude CLI   {'installed' if has_claude else 'not found'}  (recommended for /p planning)")
+            print(f"  Codex CLI    {'installed' if has_codex else 'not found'}  (recommended for /i implementation)")
+            print("")
 
         if has_claude:
             try:

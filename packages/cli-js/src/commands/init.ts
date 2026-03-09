@@ -150,7 +150,7 @@ export async function runInit(args: string[]): Promise<void> {
     let finishedWithCodexOnly = false;
     let showGuideAtEnd = false;
 
-    if (!skipProviderInstall && (!hasClaude || !hasCodex)) {
+    if (!skipProviderInstall) {
       const first = await promptFirstProvider(hasClaude, hasCodex);
       if (first !== "no") {
         if (first === "claude" && !hasClaude) {

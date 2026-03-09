@@ -53,7 +53,7 @@ Plan names use goal-based slugs. Korean and English are supported, with romaniza
 
 | Command | Description |
 | ------- | ----------- |
-| `planforge init` | Detect providers; optionally install Claude/Codex CLI; create or suggest `planforge.json`, `.cursor/plans`, skills, and rules. Use `--skip-provider-install` to skip provider install. |
+| `planforge init` | Shows provider check (Claude/Codex) first; detects providers, optionally installs CLI; creates or suggests `planforge.json`, `.cursor/plans`, skills, and rules. Use `--skip-provider-install` to skip provider prompt. |
 | `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/<summary>-<hash>.plan.md` using the planner from `planforge.json`. |
 | `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. Uses active plan from `.cursor/plans/index.json` (`activePlan`) or latest `.plan.md` unless `--plan-file` is set. |
 | `planforge config show` | Print current `planforge.json`. |

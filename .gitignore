@@ -16,6 +16,9 @@ __pycache__
 
 # cursor
 .cursor/plans
+.cursor/rules/code-comments.mdc
+.cursor/rules/notion.mdc
+.cursor/rules/pr-writing.mdc
 
 # logs
 *.log
