@@ -72,7 +72,7 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
     config = load_config(project_root)
     try:
         context = load_merged_context(
-            cwd,
+            project_root,
             context_dir=opts.get("context_dir") or config.get("contextDir"),
             inline_context=opts.get("context"),
         )
