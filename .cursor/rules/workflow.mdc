@@ -1,7 +1,7 @@
 ---
 description: PlanForge workflow rules
 globs:
-alwaysApply: false
+alwaysApply: true
 ---
 
 # PlanForge Workflow
