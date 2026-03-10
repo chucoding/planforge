@@ -9,5 +9,6 @@
     "model": "gpt-5.4",
     "reasoning": "low"
   },
-  "plansDir": ".cursor/plans"
+  "plansDir": ".cursor/plans",
+  "contextDir": ".cursor/context"
 }

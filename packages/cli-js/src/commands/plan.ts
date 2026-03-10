@@ -4,13 +4,13 @@
 
 import fs from "fs-extra";
 import { resolve } from "path";
-import { readFile } from "fs/promises";
 import { randomBytes } from "crypto";
 import { spawnSync } from "child_process";
 import { romanize } from "@daun_jung/korean-romanizer";
 import { getProjectRoot, getPlansDir } from "../utils/paths.js";
 import { getRepoContext } from "../utils/repo-context.js";
 import { getProjectContext } from "../utils/project-context.js";
+import { loadMergedContext } from "../utils/context.js";
 import { loadConfig } from "../config/load.js";
 import { getPlannerRunner } from "../providers/registry.js";
 
@@ -61,26 +61,8 @@ function extractTitleFromPlanBody(planBody: string): string {
 }
 
 export interface PlanCliOpts {
-  contextFile?: string;
+  contextDir?: string;
   context?: string;
-}
-
-async function resolveContext(opts: PlanCliOpts | undefined, cwd: string): Promise<string | undefined> {
-  if (!opts) return undefined;
-  const parts: string[] = [];
-  if (opts.contextFile) {
-    const absPath = resolve(cwd, opts.contextFile);
-    try {
-      const content = await readFile(absPath, "utf-8");
-      if (content.trim()) parts.push(content.trim());
-    } catch (err) {
-      console.error("Failed to read context file:", (err as Error).message);
-      process.exit(1);
-    }
-  }
-  if (opts.context?.trim()) parts.push(opts.context.trim());
-  if (parts.length === 0) return undefined;
-  return parts.join("\n\n");
 }
 
 export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void> {
@@ -92,9 +74,17 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
 
   const cwd = process.cwd();
   const projectRoot = getProjectRoot(cwd);
-  const context = await resolveContext(opts, cwd);
-
   const config = await loadConfig(projectRoot);
+  let context: string | undefined;
+  try {
+    context = await loadMergedContext(projectRoot, {
+      contextDir: opts?.contextDir ?? config.contextDir,
+      inlineContext: opts?.context,
+    });
+  } catch (err) {
+    console.error("Failed to load context:", (err as Error).message);
+    process.exit(1);
+  }
   const runner = getPlannerRunner(config.planner.provider);
 
   if (!runner) {

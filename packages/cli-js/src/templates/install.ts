@@ -19,6 +19,7 @@ export async function installTemplates(
   const cursorTemplates = resolve(templatesRoot, "cursor");
 
   await fs.ensureDir(cursorDir);
+  await fs.ensureDir(resolve(cursorDir, "context"));
 
   const skillsSrc = resolve(cursorTemplates, "skills");
   const skillsDest = resolve(cursorDir, "skills");

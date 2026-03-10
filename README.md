@@ -56,8 +56,8 @@ Both skills are script-first by design: they must execute the bundled `.cursor/s
 | Command | Description |
 | ------- | ----------- |
 | `planforge init` | Shows provider check (Claude/Codex) first; detects providers, optionally installs CLI; creates or suggests `planforge.json`, `.cursor/plans`, skills, and rules. Use `--skip-provider-install` to skip provider prompt. |
-| `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/<summary>-<hash>.plan.md` using the planner from `planforge.json`. |
-| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. Uses active plan from `.cursor/plans/index.json` (`activePlan`) or latest `.plan.md` unless `--plan-file` is set. |
+| `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/<summary>-<hash>.plan.md` using the planner from `planforge.json`. Context is loaded from `--context-dir` (default: `.cursor/context`) and merged from markdown files by recent mtime. |
+| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. Uses active plan from `.cursor/plans/index.json` (`activePlan`) or latest `.plan.md` unless `--plan-file` is set. Context is loaded from `--context-dir` (default: `.cursor/context`). |
 | `planforge config show` | Print current `planforge.json`. |
 | `planforge config suggest [--apply]` | Show suggested config for installed providers; `--apply` writes it to `planforge.json`. |
 | `planforge doctor` | Check Claude/Codex CLI, `CLAUDE.md`, `AGENTS.md`, `planforge.json`, `.cursor/plans`. |
@@ -120,6 +120,7 @@ repo/
   AGENTS.md
   planforge.json
   .cursor/
+    context/        # conversation context markdown (*.md, merged by recency)
     plans/          # *.plan.md from /p
     skills/
       p/            # /p -> planforge plan

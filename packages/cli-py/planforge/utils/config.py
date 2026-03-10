@@ -21,6 +21,7 @@ def load_config(project_root: str | None = None) -> dict:
                 "planner": {"provider": planner.get("provider", "claude"), **planner},
                 "implementer": {"provider": implementer.get("provider", "codex"), **implementer},
                 "plansDir": data.get("plansDir", ".cursor/plans"),
+                "contextDir": data.get("contextDir", ".cursor/context"),
             }
         except (json.JSONDecodeError, OSError):
             pass
@@ -31,21 +32,25 @@ def load_config(project_root: str | None = None) -> dict:
             "planner": {"provider": "claude", "model": "claude-opus-4-6", "effort": "high"},
             "implementer": {"provider": "codex", "model": "gpt-5.4"},
             "plansDir": ".cursor/plans",
+            "contextDir": ".cursor/context",
         }
     if has_claude:
         return {
             "planner": {"provider": "claude", "model": "claude-opus-4-6", "effort": "high"},
             "implementer": {"provider": "claude", "model": "claude-sonnet-4-6", "effort": "medium"},
             "plansDir": ".cursor/plans",
+            "contextDir": ".cursor/context",
         }
     if has_codex:
         return {
             "planner": {"provider": "codex", "model": "gpt-5.4", "reasoning": "high"},
             "implementer": {"provider": "codex", "model": "gpt-5.4", "reasoning": "low"},
             "plansDir": ".cursor/plans",
+            "contextDir": ".cursor/context",
         }
     return {
         "planner": {"provider": "claude", "model": "claude-opus-4-6"},
         "implementer": {"provider": "claude", "model": "claude-sonnet-4-6"},
         "plansDir": ".cursor/plans",
+        "contextDir": ".cursor/context",
     }

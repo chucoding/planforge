@@ -5,6 +5,8 @@
 import fs from "fs-extra";
 import { resolve } from "path";
 import { getProjectRoot, getPlansDir } from "../utils/paths.js";
+import { loadConfig } from "../config/load.js";
+import type { PlanForgeConfig } from "../config/presets.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
 
@@ -32,6 +34,18 @@ export async function runDoctor(_args: string[]): Promise<void> {
   const projectRoot = getProjectRoot(cwd);
   const plansDir = getPlansDir(projectRoot);
   const checks: Check[] = [];
+
+  const configPath = resolve(projectRoot, "planforge.json");
+  const hasConfigFile = await fs.pathExists(configPath);
+  let config: PlanForgeConfig | null = null;
+  let configLoadError: Error | null = null;
+  if (hasConfigFile) {
+    try {
+      config = await loadConfig(projectRoot);
+    } catch (e) {
+      configLoadError = e instanceof Error ? e : new Error(String(e));
+    }
+  }
 
   const hasClaude = checkClaude();
   const hasCodex = checkCodex();
@@ -63,19 +77,40 @@ export async function runDoctor(_args: string[]): Promise<void> {
     message: hasAgentsMd ? "exists" : (hasCodex ? "missing" : "n/a"),
   });
 
-  const configPath = resolve(projectRoot, "planforge.json");
-  const hasConfig = await fs.pathExists(configPath);
-  checks.push({
-    name: "planforge.json",
-    status: hasConfig ? "ok" : "error",
-    message: hasConfig ? "exists" : "missing (run planforge init)",
-  });
+  if (!hasConfigFile) {
+    checks.push({
+      name: "planforge.json",
+      status: "error",
+      message: "missing (run planforge init)",
+    });
+  } else if (configLoadError) {
+    checks.push({
+      name: "planforge.json",
+      status: "error",
+      message: `invalid or unreadable (${configLoadError.message})`,
+    });
+  } else {
+    checks.push({
+      name: "planforge.json",
+      status: "ok",
+      message: "exists",
+    });
+  }
 
   const hasPlansDir = await fs.pathExists(plansDir);
   checks.push({
     name: ".cursor/plans",
     status: hasPlansDir ? "ok" : "error",
     message: hasPlansDir ? "exists" : "missing (run planforge init)",
+  });
+
+  const contextDir = config?.contextDir ?? ".cursor/context";
+  const contextDirPath = resolve(projectRoot, contextDir);
+  const hasContextDir = await fs.pathExists(contextDirPath);
+  checks.push({
+    name: "contextDir",
+    status: hasContextDir ? "ok" : "warn",
+    message: hasContextDir ? `${contextDir} exists` : `${contextDir} missing (run planforge init)`,
   });
 
   console.log("\nPlanForge doctor");

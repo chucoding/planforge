@@ -49,6 +49,8 @@ def run_init(args: list[str]) -> None:
         plans_dir = get_plans_dir(project_root)
         Path(plans_dir).mkdir(parents=True, exist_ok=True)
         print("Created .cursor/plans")
+        (Path(project_root) / ".cursor" / "context").mkdir(parents=True, exist_ok=True)
+        print("Created .cursor/context")
 
         config_path = Path(project_root) / "planforge.json"
         if not config_path.exists():
@@ -62,6 +64,7 @@ def run_init(args: list[str]) -> None:
                             "planner": {"provider": "claude", "model": "opus", "effort": "high"},
                             "implementer": {"provider": "codex", "model": "codex"},
                             "plansDir": ".cursor/plans",
+                            "contextDir": ".cursor/context",
                         },
                         indent=2,
                     ),

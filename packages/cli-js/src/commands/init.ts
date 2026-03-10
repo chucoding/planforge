@@ -241,6 +241,7 @@ export async function runInit(args: string[]): Promise<void> {
 
     const plansDir = getPlansDir(projectRoot);
     await fs.ensureDir(plansDir);
+    await fs.ensureDir(resolve(projectRoot, ".cursor", "context"));
 
     const configPath = resolve(projectRoot, "planforge.json");
     const configExists = await fs.pathExists(configPath);
@@ -281,6 +282,7 @@ export async function runInit(args: string[]): Promise<void> {
       console.log("");
     }
     console.log("  Created .cursor/plans");
+    console.log("  Created .cursor/context");
     if (createdConfig) {
       console.log("  Created planforge.json");
     } else if (updatedConfig) {
