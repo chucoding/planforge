@@ -9,17 +9,6 @@ from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 from planforge.templates.install import install_templates
 
-DEFAULT_CLAUDE_MD = """# CLAUDE.md
-
-Claude project context. Run 'claude /init' after signing in, or edit this file.
-"""
-
-DEFAULT_AGENTS_MD = """# AGENTS.md
-
-Codex/OpenAI agent context for this project.
-Customize this file to give the implementer (/i) relevant project context.
-"""
-
 
 def _get_preset_for_providers(has_claude: bool, has_codex: bool) -> dict:
     if has_claude and has_codex:
@@ -71,17 +60,7 @@ def run_init(args: list[str]) -> None:
                 run_command("claude", ["/init"], project_root)
             except Exception as e:
                 print("Warning: claude /init failed:", e)
-                claude_path = Path(project_root) / "CLAUDE.md"
-                if not claude_path.exists():
-                    claude_path.write_text(DEFAULT_CLAUDE_MD, encoding="utf-8")
-                    print("Created CLAUDE.md")
                 print("Claude /init failed (sign in may be required). Run 'claude' to sign in, then run 'claude /init' in this project.")
-
-        if has_codex:
-            agents_path = Path(project_root) / "AGENTS.md"
-            if not agents_path.exists():
-                agents_path.write_text(DEFAULT_AGENTS_MD, encoding="utf-8")
-                print("Created AGENTS.md")
 
         install_templates(project_root)
 
