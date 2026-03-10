@@ -24,6 +24,23 @@ function getRepoRoot(): string {
 }
 
 /**
+ * True if stdout looks like a development plan (has expected section headings).
+ * Used to still save the plan when Codex exits 1 due to rollout recorder / cache errors.
+ */
+function looksLikePlan(stdout: string): boolean {
+  const t = (stdout ?? "").trim();
+  if (t.length < 200) return false;
+  const hasGoal =
+    t.includes("**Goal**") || t.includes("## Goal");
+  const hasLaterSection =
+    t.includes("**Step-by-Step Plan**") ||
+    t.includes("## Step-by-Step Plan") ||
+    t.includes("**Validation Checklist**") ||
+    t.includes("## Validation Checklist");
+  return hasGoal && hasLaterSection;
+}
+
+/**
  * Run "codex exec" with the given prompt. On Windows uses temp file + PowerShell to avoid
  * EINVAL from spawning .cmd directly (CVE-2024-27980) and to avoid shell splitting long args.
  */
@@ -37,11 +54,16 @@ function runCodexExec(fullPrompt: string, cwd: string): string {
       const escapedPath = tempPath.replace(/'/g, "''");
       const script = `Get-Content -Raw -LiteralPath '${escapedPath}' | codex exec -`;
       const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
+      const out = (result.stdout ?? "").trim();
       if (result.status !== 0) {
+        if (looksLikePlan(out)) {
+          console.error("Warning: Codex exited with code", result.status, "but stdout looks like a plan; saving it anyway.");
+          return out;
+        }
         const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
         throw new Error(String(msg));
       }
-      return (result.stdout ?? "").trim();
+      return out;
     } finally {
       try {
         unlinkSync(tempPath);
@@ -52,11 +74,16 @@ function runCodexExec(fullPrompt: string, cwd: string): string {
   }
 
   const result = spawnSync("codex", ["exec", fullPrompt], { ...opts, shell: false });
+  const out = (result.stdout ?? "").trim();
   if (result.status !== 0) {
+    if (looksLikePlan(out)) {
+      console.error("Warning: Codex exited with code", result.status, "but stdout looks like a plan; saving it anyway.");
+      return out;
+    }
     const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
     throw new Error(String(msg));
   }
-  return (result.stdout ?? "").trim();
+  return out;
 }
 
 /**
