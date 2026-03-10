@@ -6,7 +6,6 @@ from pathlib import Path
 from planforge.utils.paths import get_project_root, get_plans_dir
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
-from planforge.utils.project_context import get_preferred_instruction_file
 
 
 def _status_symbol(status: str) -> str:
@@ -15,18 +14,6 @@ def _status_symbol(status: str) -> str:
     if status == "warn":
         return "[WARN]"
     return "[ERROR]"
-
-
-def _provider_roles(config: dict | None, provider: str) -> list[str]:
-    roles: list[str] = []
-    cfg = config or {}
-    planner = cfg.get("planner")
-    if isinstance(planner, dict) and planner.get("provider") == provider:
-        roles.append("planner")
-    implementer = cfg.get("implementer")
-    if isinstance(implementer, dict) and implementer.get("provider") == provider:
-        roles.append("implementer")
-    return roles
 
 
 def run_doctor(args: list[str]) -> None:
@@ -58,50 +45,6 @@ def run_doctor(args: list[str]) -> None:
         "Codex CLI",
         "ok" if has_codex else "warn",
         "available" if has_codex else "not found (implementation /i will be limited)",
-    ))
-
-    has_claude_md = (Path(project_root) / "CLAUDE.md").exists()
-    has_agents_md = (Path(project_root) / "AGENTS.md").exists()
-    claude_roles = _provider_roles(config, "claude")
-    checks.append((
-        "CLAUDE.md",
-        "ok" if has_claude_md else ("warn" if claude_roles or has_claude else "ok"),
-        (
-            f"exists (used by {' + '.join(claude_roles)})"
-            if has_claude_md and claude_roles
-            else "exists"
-            if has_claude_md
-            else (
-                f"missing (configured Claude role will fall back to AGENTS.md; preferred: {get_preferred_instruction_file('claude')})"
-                if claude_roles and has_agents_md
-                else "missing (run claude /init or planforge init)"
-                if claude_roles
-                else "missing (run claude /init if you want Claude-specific project instructions)"
-                if has_claude
-                else "optional"
-            )
-        ),
-    ))
-
-    codex_roles = _provider_roles(config, "codex")
-    checks.append((
-        "AGENTS.md",
-        "ok" if has_agents_md else ("warn" if codex_roles or has_codex else "ok"),
-        (
-            f"exists (used by {' + '.join(codex_roles)})"
-            if has_agents_md and codex_roles
-            else "exists"
-            if has_agents_md
-            else (
-                f"missing (configured Codex role will fall back to CLAUDE.md; preferred: {get_preferred_instruction_file('codex')})"
-                if codex_roles and has_claude_md
-                else "missing (run planforge init)"
-                if codex_roles
-                else "missing (run planforge init if you want Codex-specific project instructions)"
-                if has_codex
-                else "optional"
-            )
-        ),
     ))
 
     if not has_config_file:
@@ -148,8 +91,6 @@ def run_doctor(args: list[str]) -> None:
     print("")
     if not has_claude or not has_codex:
         print("  Run planforge init to install missing providers.")
-    if claude_roles or codex_roles:
-        print("  Provider roles prefer CLAUDE.md for Claude and AGENTS.md for Codex, with fallback to the other file.")
     print("")
 
     if any(status == "error" for _, status, _ in checks):
