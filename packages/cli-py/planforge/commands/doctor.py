@@ -19,9 +19,12 @@ def _status_symbol(status: str) -> str:
 
 def _provider_roles(config: dict | None, provider: str) -> list[str]:
     roles: list[str] = []
-    if (config or {}).get("planner", {}).get("provider") == provider:
+    cfg = config or {}
+    planner = cfg.get("planner")
+    if isinstance(planner, dict) and planner.get("provider") == provider:
         roles.append("planner")
-    if (config or {}).get("implementer", {}).get("provider") == provider:
+    implementer = cfg.get("implementer")
+    if isinstance(implementer, dict) and implementer.get("provider") == provider:
         roles.append("implementer")
     return roles
 
