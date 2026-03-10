@@ -43,8 +43,10 @@ function looksLikePlan(stdout: string): boolean {
 /**
  * Run "codex exec" with the given prompt. On Windows uses temp file + PowerShell to avoid
  * EINVAL from spawning .cmd directly (CVE-2024-27980) and to avoid shell splitting long args.
+ * When allowPlanFallback is true, non-zero exit is still treated as success if stdout looks like a plan
+ * (used only for runPlan; runImplement must not treat non-zero as success).
  */
-function runCodexExec(fullPrompt: string, cwd: string): string {
+function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false): string {
   const opts = { cwd, encoding: "utf-8" as const, maxBuffer: 1024 * 1024 };
 
   if (process.platform === "win32") {
@@ -56,7 +58,7 @@ function runCodexExec(fullPrompt: string, cwd: string): string {
       const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
       const out = (result.stdout ?? "").trim();
       if (result.status !== 0) {
-        if (looksLikePlan(out)) {
+        if (allowPlanFallback && looksLikePlan(out)) {
           console.error("Warning: Codex exited with code", result.status, "but stdout looks like a plan; saving it anyway.");
           return out;
         }
@@ -76,7 +78,7 @@ function runCodexExec(fullPrompt: string, cwd: string): string {
   const result = spawnSync("codex", ["exec", fullPrompt], { ...opts, shell: false });
   const out = (result.stdout ?? "").trim();
   if (result.status !== 0) {
-    if (looksLikePlan(out)) {
+    if (allowPlanFallback && looksLikePlan(out)) {
       console.error("Warning: Codex exited with code", result.status, "but stdout looks like a plan; saving it anyway.");
       return out;
     }
@@ -191,7 +193,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   }
 
   try {
-    return runCodexExec(fullPrompt, cwd);
+    return runCodexExec(fullPrompt, cwd, true);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr

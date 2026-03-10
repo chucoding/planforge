@@ -43,7 +43,10 @@ def _looks_like_plan(stdout: str) -> bool:
     return has_goal and has_later
 
 
-def _run_codex_exec(full_prompt: str, cwd: str) -> str:
+def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = False) -> str:
+    """Run codex exec. When allow_plan_fallback is True (plan only), non-zero exit may still
+    return stdout if it looks like a plan. For implement, leave False so non-zero is always failure.
+    """
     max_buffer = 1024 * 1024
     if os.name == "nt":
         fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-")
@@ -61,7 +64,7 @@ def _run_codex_exec(full_prompt: str, cwd: str) -> str:
             )
             out = (result.stdout or "").strip()
             if result.returncode != 0:
-                if _looks_like_plan(out):
+                if allow_plan_fallback and _looks_like_plan(out):
                     print("Warning: Codex exited with code", result.returncode, "but stdout looks like a plan; saving it anyway.", file=sys.stderr)
                     return out
                 msg = result.stderr or result.stdout or "Codex exited non-zero"
@@ -81,7 +84,7 @@ def _run_codex_exec(full_prompt: str, cwd: str) -> str:
     )
     out = (result.stdout or "").strip()
     if result.returncode != 0:
-        if _looks_like_plan(out):
+        if allow_plan_fallback and _looks_like_plan(out):
             print("Warning: Codex exited with code", result.returncode, "but stdout looks like a plan; saving it anyway.", file=sys.stderr)
             return out
         msg = result.stderr or result.stdout or "Codex exited non-zero"
@@ -107,7 +110,7 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     full_prompt = body + "\n\n---\n\nUser goal: " + goal
     try:
-        return _run_codex_exec(full_prompt, cwd)
+        return _run_codex_exec(full_prompt, cwd, allow_plan_fallback=True)
     except Exception as e:
         raise RuntimeError("Codex plan failed: " + str(e)) from e
 
