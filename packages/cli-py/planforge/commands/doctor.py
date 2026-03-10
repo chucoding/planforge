@@ -1,9 +1,9 @@
 """planforge doctor - check environment and providers."""
 
+import json
 from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_plans_dir
-from planforge.utils.config import load_config
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 
@@ -27,8 +27,9 @@ def run_doctor(args: list[str]) -> None:
     config_load_error: str | None = None
     if has_config_file:
         try:
-            config = load_config(project_root)
-        except Exception as e:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            config = data if isinstance(data, dict) else {}
+        except (json.JSONDecodeError, OSError) as e:
             config_load_error = str(e)
 
     has_claude = check_claude()
