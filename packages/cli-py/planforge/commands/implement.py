@@ -153,7 +153,7 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
         raise SystemExit(1)
     files_to_change = opts.get("files") or parse_files_from_plan(plan_content)
     code_context = _build_code_context(project_root, files_to_change) if files_to_change else None
-    project_context = get_project_context(project_root)
+    project_context, project_context_source = get_project_context(project_root, provider)
     recent_commits_per_file = (
         _build_recent_commits_for_files(project_root, files_to_change) if files_to_change else None
     )
@@ -164,6 +164,7 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
         "filesToChange": files_to_change if files_to_change else None,
         "codeContext": code_context,
         "projectContext": project_context,
+        "projectContextSource": project_context_source,
         "recentCommitsPerFile": recent_commits_per_file,
     }
     try:

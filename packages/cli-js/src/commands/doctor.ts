@@ -9,6 +9,7 @@ import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/presets.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
+import { getPreferredInstructionFile } from "../utils/project-context.js";
 
 type Status = "ok" | "warn" | "error";
 
@@ -27,6 +28,13 @@ function statusSymbol(s: Status): string {
     case "error":
       return "[ERROR]";
   }
+}
+
+function providerRoles(config: PlanForgeConfig | null, provider: string): string[] {
+  const roles: string[] = [];
+  if (config?.planner.provider === provider) roles.push("planner");
+  if (config?.implementer.provider === provider) roles.push("implementer");
+  return roles;
 }
 
 export async function runDoctor(_args: string[]): Promise<void> {
@@ -63,18 +71,31 @@ export async function runDoctor(_args: string[]): Promise<void> {
 
   const claudeMdPath = resolve(projectRoot, "CLAUDE.md");
   const hasClaudeMd = await fs.pathExists(claudeMdPath);
+  const hasAgentsMd = await fs.pathExists(resolve(projectRoot, "AGENTS.md"));
+  const claudeRoles = providerRoles(config, "claude");
   checks.push({
     name: "CLAUDE.md",
-    status: hasClaudeMd ? "ok" : (hasClaude ? "warn" : "ok"),
-    message: hasClaudeMd ? "exists" : (hasClaude ? "missing (run claude /init)" : "n/a"),
+    status: hasClaudeMd ? "ok" : (claudeRoles.length > 0 || hasClaude ? "warn" : "ok"),
+    message: hasClaudeMd
+      ? (claudeRoles.length > 0 ? `exists (used by ${claudeRoles.join(" + ")})` : "exists")
+      : (claudeRoles.length > 0
+        ? (hasAgentsMd
+          ? `missing (configured Claude role will fall back to AGENTS.md; preferred: ${getPreferredInstructionFile("claude")})`
+          : "missing (run claude /init or planforge init)")
+        : (hasClaude ? "missing (run claude /init if you want Claude-specific project instructions)" : "optional")),
   });
 
-  const agentsPath = resolve(projectRoot, "AGENTS.md");
-  const hasAgentsMd = await fs.pathExists(agentsPath);
+  const codexRoles = providerRoles(config, "codex");
   checks.push({
     name: "AGENTS.md",
-    status: hasAgentsMd ? "ok" : (hasCodex ? "warn" : "ok"),
-    message: hasAgentsMd ? "exists" : (hasCodex ? "missing" : "n/a"),
+    status: hasAgentsMd ? "ok" : (codexRoles.length > 0 || hasCodex ? "warn" : "ok"),
+    message: hasAgentsMd
+      ? (codexRoles.length > 0 ? `exists (used by ${codexRoles.join(" + ")})` : "exists")
+      : (codexRoles.length > 0
+        ? (hasClaudeMd
+          ? `missing (configured Codex role will fall back to CLAUDE.md; preferred: ${getPreferredInstructionFile("codex")})`
+          : "missing (run planforge init)")
+        : (hasCodex ? "missing (run planforge init if you want Codex-specific project instructions)" : "optional")),
   });
 
   if (!hasConfigFile) {
@@ -125,6 +146,9 @@ export async function runDoctor(_args: string[]): Promise<void> {
   console.log("");
   if (!hasClaude || !hasCodex) {
     console.log("  Run planforge init to install missing providers.");
+  }
+  if (claudeRoles.length > 0 || codexRoles.length > 0) {
+    console.log("  Provider roles prefer CLAUDE.md for Claude and AGENTS.md for Codex, with fallback to the other file.");
   }
   if (hasClaude || hasCodex) {
     console.log("  Run planforge config suggest to see recommended config for your providers.");

@@ -88,12 +88,13 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
         print(f"{provider} CLI not found. Install the provider CLI to use planforge plan.", file=__import__("sys").stderr)
         raise SystemExit(1)
     repo_context = get_repo_context(project_root, goal)
-    project_context = get_project_context(project_root)
+    project_context, project_context_source = get_project_context(project_root, provider)
     run_opts = {
         "cwd": project_root,
         "context": context,
         "repoContext": repo_context,
         "projectContext": project_context,
+        "projectContextSource": project_context_source,
     }
     try:
         plan_body = run(goal, run_opts)

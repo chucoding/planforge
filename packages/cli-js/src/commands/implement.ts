@@ -172,7 +172,10 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
   const filesToChange = opts?.files?.length ? opts.files : parseFilesFromPlan(planContent);
   const codeContext =
     filesToChange.length > 0 ? await buildCodeContext(projectRoot, filesToChange) : undefined;
-  const projectContext = getProjectContext(projectRoot);
+  const { content: projectContext, source: projectContextSource } = getProjectContext(
+    projectRoot,
+    config.implementer.provider
+  );
   const recentCommitsPerFile =
     filesToChange.length > 0 ? buildRecentCommitsForFiles(projectRoot, filesToChange) : undefined;
 
@@ -184,6 +187,7 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
       filesToChange: filesToChange.length > 0 ? filesToChange : undefined,
       codeContext,
       projectContext,
+      projectContextSource,
       recentCommitsPerFile,
     });
     const extracted = extractFilesFromOutput(result);

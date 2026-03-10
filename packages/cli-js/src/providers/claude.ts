@@ -33,7 +33,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
     );
     let body = systemPrompt.trim();
     if (opts?.projectContext?.trim()) {
-      body += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "CLAUDE.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.repoContext?.trim()) {
       body += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
@@ -45,7 +45,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   } catch {
     let fallback = "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist.";
     if (opts?.projectContext?.trim()) {
-      fallback += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      fallback += `\n\n---\n\nProject context (${opts.projectContextSource ?? "CLAUDE.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.repoContext?.trim()) {
       fallback += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
@@ -92,7 +92,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     );
     let body = systemPrompt.trim();
     if (opts?.projectContext?.trim()) {
-      body += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "CLAUDE.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.context?.trim()) {
       body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
@@ -113,7 +113,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
   } catch {
     let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
     if (opts?.projectContext?.trim()) {
-      fallback += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      fallback += `\n\n---\n\nProject context (${opts.projectContextSource ?? "CLAUDE.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.context?.trim()) {
       fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();

@@ -35,7 +35,7 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
     except (OSError, ValueError):
         body = DEFAULT_PLANNER_FALLBACK
     if (opts.get("projectContext") or "").strip():
-        body += "\n\n---\n\nProject context (AGENTS.md):\n" + (opts["projectContext"] or "").strip()
+        body += f"\n\n---\n\nProject context ({opts.get('projectContextSource') or 'CLAUDE.md'}):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("repoContext") or "").strip():
         body += "\n\n---\n\nRepository context:\n" + (opts["repoContext"] or "").strip()
     if (opts.get("context") or "").strip():
@@ -66,7 +66,7 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
     except (OSError, ValueError):
         body = DEFAULT_IMPLEMENTER_FALLBACK
     if (opts.get("projectContext") or "").strip():
-        body += "\n\n---\n\nProject context (AGENTS.md):\n" + (opts["projectContext"] or "").strip()
+        body += f"\n\n---\n\nProject context ({opts.get('projectContextSource') or 'CLAUDE.md'}):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("context") or "").strip():
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     if (opts.get("planContent") or "").strip():
