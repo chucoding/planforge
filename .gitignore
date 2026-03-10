@@ -17,6 +17,7 @@ __pycache__
 
 # cursor
 .cursor/plans
+.cursor/context
 .cursor/rules/code-comments.mdc
 .cursor/rules/notion.mdc
 .cursor/rules/pr-writing.mdc

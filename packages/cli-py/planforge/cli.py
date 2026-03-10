@@ -18,13 +18,13 @@ def main() -> None:
 @main.command()
 @click.option("--skip-provider-install", is_flag=True, help="Skip interactive provider (Claude/Codex) install prompt")
 def init(skip_provider_install: bool) -> None:
-    """Detect providers, run claude /init, create AGENTS.md, install Cursor slash commands, create .cursor/plans and planforge.json."""
+    """Detect providers, run claude /init when available, create AGENTS.md for Codex, install Cursor slash commands, create .cursor/plans and planforge.json."""
     run_init(["--skip-provider-install"] if skip_provider_install else [])
 
 
 @main.command()
 def doctor() -> None:
-    """Check environment: Claude CLI, Codex CLI, CLAUDE.md, AGENTS.md, planforge.json, .cursor/plans."""
+    """Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .cursor/plans."""
     run_doctor([])
 
 

@@ -14,17 +14,6 @@ import { installTemplates } from "../templates/install.js";
 import { getPresetForProviders, type PlanForgeConfig } from "../config/presets.js";
 import { formatRole, configEqual } from "./config.js";
 
-const DEFAULT_AGENTS_MD = `# AGENTS.md
-
-Codex/OpenAI agent context for this project.
-Customize this file to give the implementer (/i) relevant project context.
-`;
-
-const DEFAULT_CLAUDE_MD = `# CLAUDE.md
-
-Claude project context. Run 'claude /init' after signing in, or edit this file.
-`;
-
 /** First-step choice: which provider to install (one at a time), or none. */
 export type FirstProviderChoice = "claude" | "codex" | "no";
 
@@ -220,20 +209,7 @@ export async function runInit(args: string[]): Promise<void> {
         runCommand("claude", ["/init"], projectRoot);
       } catch (err) {
         console.warn("Warning: claude /init failed:", (err as Error).message);
-        const claudeMdPath = resolve(projectRoot, "CLAUDE.md");
-        if (!(await fs.pathExists(claudeMdPath))) {
-          await fs.writeFile(claudeMdPath, DEFAULT_CLAUDE_MD, "utf-8");
-          console.log("  Created CLAUDE.md");
-        }
-        console.log("  Claude /init failed (sign in may be required). Run 'claude' to sign in, then run 'claude /init' in this project.");
-      }
-    }
-
-    if (hasCodex) {
-      const agentsPath = resolve(projectRoot, "AGENTS.md");
-      if (!(await fs.pathExists(agentsPath))) {
-        await fs.writeFile(agentsPath, DEFAULT_AGENTS_MD, "utf-8");
-        console.log("  Created AGENTS.md");
+        console.log("  Run 'claude' to sign in.");
       }
     }
 

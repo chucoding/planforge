@@ -98,7 +98,10 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
   }
 
   const repoContext = getRepoContext(projectRoot, goal);
-  const projectContext = getProjectContext(projectRoot);
+  const { content: projectContext, source: projectContextSource } = getProjectContext(
+    projectRoot,
+    config.planner.provider
+  );
 
   try {
     const planBody = await runner.runPlan(goal, {
@@ -106,6 +109,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       context,
       repoContext,
       projectContext,
+      projectContextSource,
     });
     const asciiOnly = config.planner.asciiSlug ?? process.env.PLANFORGE_ASCII_SLUG === "1";
     let slug = asciiOnly ? slugifyAscii(goal) : slugifyForFilename(goal);

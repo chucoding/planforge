@@ -20,7 +20,7 @@ program
 
 program
   .command("init")
-  .description("Detect providers, run claude /init, create AGENTS.md, install Cursor slash commands, create .cursor/plans and planforge.json")
+  .description("Detect providers, run claude /init when available, create AGENTS.md for Codex, install Cursor slash commands, create .cursor/plans and planforge.json")
   .option("--skip-provider-install", "Skip interactive provider (Claude/Codex) install prompt")
   .action(async (opts: { skipProviderInstall?: boolean }) => {
     await runInit(opts.skipProviderInstall ? ["--skip-provider-install"] : []);
@@ -28,7 +28,7 @@ program
 
 program
   .command("doctor")
-  .description("Check environment: Claude CLI, Codex CLI, CLAUDE.md, AGENTS.md, planforge.json, .cursor/plans")
+  .description("Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .cursor/plans")
   .action(async () => {
     await runDoctor([]);
   });
