@@ -12,7 +12,7 @@ def load_context_dir(cwd: str, context_dir: str | None) -> str | None:
     if not base.is_dir():
         raise OSError(f"Context path is not a directory: {context_dir}")
 
-    files = [p for p in base.rglob("*.md") if p.is_file()]
+    files = [p for p in base.rglob("*") if p.is_file() and p.name.lower().endswith(".md")]
     files.sort(key=lambda p: (-p.stat().st_mtime, p.as_posix()))
 
     blocks: list[str] = []
