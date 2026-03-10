@@ -19,7 +19,7 @@ jobs:
             --method POST \
             --input - <<< "$JSON"
         env:
-          GH_TOKEN: ${{ secrets.HOMEDOT_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CHUCODING_GITHUB_TOKEN }}
 
       - name: Add label by branch prefix
         run: |
@@ -54,4 +54,4 @@ jobs:
             --method POST \
             --field "labels[]=$LABEL"
         env:
-          GH_TOKEN: ${{ secrets.HOMEDOT_GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.CHUCODING_GITHUB_TOKEN }}
