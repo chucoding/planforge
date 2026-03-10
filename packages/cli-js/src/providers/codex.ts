@@ -54,7 +54,7 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
     try {
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' | codex exec -`;
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | codex exec -`;
       const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
       const out = (result.stdout ?? "").trim();
       if (result.status !== 0) {
@@ -101,7 +101,7 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string): Promise<string>
       const tempPath = join(tmpdir(), "planforge-" + randomBytes(8).toString("hex") + ".txt");
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' | codex exec -`;
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | codex exec -`;
       const child = spawn("powershell", ["-NoProfile", "-Command", script], {
         ...opts,
         stdio: ["ignore", "pipe", "pipe"],
