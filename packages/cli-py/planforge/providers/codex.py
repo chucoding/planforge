@@ -44,8 +44,9 @@ def _looks_like_plan(stdout: str) -> bool:
 
 
 def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = False) -> str:
-    """Run codex exec. When allow_plan_fallback is True (plan only), non-zero exit may still
-    return stdout if it looks like a plan. For implement, leave False so non-zero is always failure.
+    """Run codex exec. When allow_plan_fallback is True (plan only), exit code 1 may still
+    return stdout if it looks like a plan (e.g. Codex 1 due to rollout/cache). Other non-zero
+    (timeout, signals) are never accepted. For implement, leave False so non-zero is always failure.
     """
     max_buffer = 1024 * 1024
     if os.name == "nt":
@@ -64,8 +65,8 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
             )
             out = (result.stdout or "").strip()
             if result.returncode != 0:
-                if allow_plan_fallback and _looks_like_plan(out):
-                    print("Warning: Codex exited with code", result.returncode, "but stdout looks like a plan; saving it anyway.", file=sys.stderr)
+                if allow_plan_fallback and result.returncode == 1 and _looks_like_plan(out):
+                    print("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.", file=sys.stderr)
                     return out
                 msg = result.stderr or result.stdout or "Codex exited non-zero"
                 raise RuntimeError(msg)
@@ -84,8 +85,8 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
     )
     out = (result.stdout or "").strip()
     if result.returncode != 0:
-        if allow_plan_fallback and _looks_like_plan(out):
-            print("Warning: Codex exited with code", result.returncode, "but stdout looks like a plan; saving it anyway.", file=sys.stderr)
+        if allow_plan_fallback and result.returncode == 1 and _looks_like_plan(out):
+            print("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.", file=sys.stderr)
             return out
         msg = result.stderr or result.stdout or "Codex exited non-zero"
         raise RuntimeError(msg)

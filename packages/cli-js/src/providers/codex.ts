@@ -58,8 +58,8 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
       const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
       const out = (result.stdout ?? "").trim();
       if (result.status !== 0) {
-        if (allowPlanFallback && looksLikePlan(out)) {
-          console.error("Warning: Codex exited with code", result.status, "but stdout looks like a plan; saving it anyway.");
+        if (allowPlanFallback && result.status === 1 && looksLikePlan(out)) {
+          console.error("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.");
           return out;
         }
         const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
@@ -78,8 +78,8 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
   const result = spawnSync("codex", ["exec", fullPrompt], { ...opts, shell: false });
   const out = (result.stdout ?? "").trim();
   if (result.status !== 0) {
-    if (allowPlanFallback && looksLikePlan(out)) {
-      console.error("Warning: Codex exited with code", result.status, "but stdout looks like a plan; saving it anyway.");
+    if (allowPlanFallback && result.status === 1 && looksLikePlan(out)) {
+      console.error("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.");
       return out;
     }
     const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
