@@ -263,13 +263,22 @@ export async function runDoctorAi(args: string[]): Promise<void> {
   if (!fs.existsSync(promptsPath)) {
     throw new Error(`Missing or invalid template: ${promptsPath}. Run from repo root or ensure templates exist.`);
   }
-  const promptsData = (await fs.readJson(promptsPath)) as { tc1PlanRequest?: string; tc2ImplementRequest?: string };
-  if (typeof promptsData?.tc1PlanRequest !== "string" || typeof promptsData?.tc2ImplementRequest !== "string") {
+  const promptsData = (await fs.readJson(promptsPath)) as {
+    tc1PlanRequest?: string;
+    tc2ImplementRequest?: string;
+    tc3SlashPWithImplementationStyleContent?: string;
+  };
+  if (
+    typeof promptsData?.tc1PlanRequest !== "string" ||
+    typeof promptsData?.tc2ImplementRequest !== "string" ||
+    typeof promptsData?.tc3SlashPWithImplementationStyleContent !== "string"
+  ) {
     throw new Error(`Missing or invalid template: ${promptsPath}. Run from repo root or ensure templates exist.`);
   }
 
   let tc1Pass = false;
   let tc2Pass = false;
+  let tc3Pass = false;
   try {
     const tc1Response = await completeOneTurn(
       systemPrompt,
@@ -294,11 +303,24 @@ export async function runDoctorAi(args: string[]): Promise<void> {
   } catch (e) {
     console.error("TC2 (implement request) error:", (e as Error).message);
   }
+  try {
+    const tc3Response = await completeOneTurn(
+      systemPrompt,
+      promptsData.tc3SlashPWithImplementationStyleContent,
+      opts
+    );
+    tc3Pass =
+      tc3Response.includes("planforge plan") ||
+      tc3Response.includes("run_plan.sh");
+  } catch (e) {
+    console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
+  }
 
   console.log("  TC1 (plan request)     : " + (tc1Pass ? "[OK] pass" : "[FAIL]"));
   console.log("  TC2 (implement request): " + (tc2Pass ? "[OK] pass" : "[FAIL]"));
+  console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? "[OK] pass" : "[FAIL]"));
   console.log("");
-  if (!tc1Pass || !tc2Pass) {
+  if (!tc1Pass || !tc2Pass || !tc3Pass) {
     process.exit(1);
   }
 }

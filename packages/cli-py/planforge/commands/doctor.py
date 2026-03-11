@@ -203,7 +203,12 @@ def run_doctor_ai(args: list[str]) -> None:
         prompts_data = json.loads(prompts_path.read_text(encoding="utf-8"))
         tc1_msg = prompts_data.get("tc1PlanRequest")
         tc2_msg = prompts_data.get("tc2ImplementRequest")
-        if not isinstance(tc1_msg, str) or not isinstance(tc2_msg, str):
+        tc3_msg = prompts_data.get("tc3SlashPWithImplementationStyleContent")
+        if (
+            not isinstance(tc1_msg, str)
+            or not isinstance(tc2_msg, str)
+            or not isinstance(tc3_msg, str)
+        ):
             raise RuntimeError(
                 f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
             )
@@ -214,6 +219,7 @@ def run_doctor_ai(args: list[str]) -> None:
 
     tc1_pass = False
     tc2_pass = False
+    tc3_pass = False
     try:
         tc1_response = complete_one_turn(
             system_prompt,
@@ -232,9 +238,19 @@ def run_doctor_ai(args: list[str]) -> None:
         tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
     except Exception as e:
         print("TC2 (implement request) error:", e, file=sys.stderr)
+    try:
+        tc3_response = complete_one_turn(
+            system_prompt,
+            tc3_msg,
+            **opts,
+        )
+        tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
+    except Exception as e:
+        print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
 
     print("  TC1 (plan request)     : " + ("[OK] pass" if tc1_pass else "[FAIL]"))
     print("  TC2 (implement request): " + ("[OK] pass" if tc2_pass else "[FAIL]"))
+    print("  TC3 (/p with implementation-style request): " + ("[OK] pass" if tc3_pass else "[FAIL]"))
     print("")
-    if not tc1_pass or not tc2_pass:
+    if not tc1_pass or not tc2_pass or not tc3_pass:
         raise SystemExit(1)
