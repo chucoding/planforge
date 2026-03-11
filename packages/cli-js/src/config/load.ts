@@ -1,8 +1,9 @@
 /**
  * Load planforge.json or fall back to default config for current providers.
+ * Default config is read from templates/config/default-*.json; missing or invalid template throws.
  */
 
-import { readFileSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import fs from "fs-extra";
 import { resolve } from "path";
 import { getTemplatesRoot } from "../utils/paths.js";
@@ -10,44 +11,28 @@ import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
 import type { PlanForgeConfig } from "./types.js";
 
-const DEFAULT_CONFIGS: Record<string, PlanForgeConfig> = {
-  both: {
-    planner: { provider: "claude", model: "claude-opus-4-6", effort: "high" },
-    implementer: { provider: "codex", model: "gpt-5.4" },
-    plansDir: ".cursor/plans",
-    contextDir: ".cursor/context",
-  },
-  claudeOnly: {
-    planner: { provider: "claude", model: "claude-opus-4-6", effort: "high" },
-    implementer: { provider: "claude", model: "claude-sonnet-4-6", effort: "medium" },
-    plansDir: ".cursor/plans",
-    contextDir: ".cursor/context",
-  },
-  codexOnly: {
-    planner: { provider: "codex", model: "gpt-5.4", reasoning: "high" },
-    implementer: { provider: "codex", model: "gpt-5.4", reasoning: "low" },
-    plansDir: ".cursor/plans",
-    contextDir: ".cursor/context",
-  },
-};
-
 /**
- * Default config when planforge.json is missing. Reads from templates/config/default-*.json when present.
+ * Default config when planforge.json is missing. Reads from templates/config/default-*.json.
+ * Throws if the template file is missing or invalid.
  */
 export function getDefaultConfig(hasClaude: boolean, hasCodex: boolean): PlanForgeConfig {
-  let key: keyof typeof DEFAULT_CONFIGS;
-  if (hasClaude && hasCodex) key = "both";
-  else if (hasClaude) key = "claudeOnly";
-  else if (hasCodex) key = "codexOnly";
-  else key = "claudeOnly";
-
-  const fileName = key === "both" ? "default-both.json" : key === "claudeOnly" ? "default-claude-only.json" : "default-codex-only.json";
+  const fileName =
+    hasClaude && hasCodex
+      ? "default-both.json"
+      : hasClaude
+        ? "default-claude-only.json"
+        : hasCodex
+          ? "default-codex-only.json"
+          : "default-claude-only.json";
   const filePath = resolve(getTemplatesRoot(), "config", fileName);
+  if (!existsSync(filePath)) {
+    throw new Error(`Missing or invalid template: ${filePath}. Run from repo root or ensure templates exist.`);
+  }
   try {
     const data = JSON.parse(readFileSync(filePath, "utf-8")) as PlanForgeConfig;
     return data;
-  } catch {
-    return DEFAULT_CONFIGS[key];
+  } catch (e) {
+    throw new Error(`Missing or invalid template: ${filePath}. Run from repo root or ensure templates exist.`);
   }
 }
 

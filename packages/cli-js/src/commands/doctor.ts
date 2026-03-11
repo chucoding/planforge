@@ -8,7 +8,6 @@ import { resolve } from "path";
 import { getProjectRoot, getPlansDir, getTemplatesRoot } from "../utils/paths.js";
 import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
-import { getDoctorAiPrompts } from "./doctor-ai-prompts.js";
 import { checkClaude, listModelsClaude, completeOneTurn as claudeCompleteOneTurn } from "../providers/claude.js";
 import { checkCodex, listModelsCodex, completeOneTurn as codexCompleteOneTurn } from "../providers/codex.js";
 
@@ -134,11 +133,13 @@ function loadWorkflowMdc(projectRoot: string): string {
   if (fs.existsSync(installed)) {
     return fs.readFileSync(installed, "utf-8");
   }
-  const templates = resolve(getTemplatesRoot(), "cursor", "rules", "workflow.mdc");
-  if (fs.existsSync(templates)) {
-    return fs.readFileSync(templates, "utf-8");
+  const templatesPath = resolve(getTemplatesRoot(), "cursor", "rules", "workflow.mdc");
+  if (fs.existsSync(templatesPath)) {
+    return fs.readFileSync(templatesPath, "utf-8");
   }
-  return "When user asks for a plan, run planforge plan. When user asks for implementation, run planforge implement.";
+  throw new Error(
+    `Missing or invalid template: ${templatesPath}. Run from repo root or ensure templates exist.`
+  );
 }
 
 function buildModelListFromConfig(config: PlanForgeConfig, hasClaude: boolean, hasCodex: boolean): DoctorAiModelOption[] {
@@ -258,13 +259,21 @@ export async function runDoctorAi(args: string[]): Promise<void> {
 
   console.log("\nRunning workflow tests with " + selected.provider + " (" + selected.model + ")...\n");
 
-  const prompts = await getDoctorAiPrompts();
+  const promptsPath = resolve(getTemplatesRoot(), "doctor-ai", "prompts.json");
+  if (!fs.existsSync(promptsPath)) {
+    throw new Error(`Missing or invalid template: ${promptsPath}. Run from repo root or ensure templates exist.`);
+  }
+  const promptsData = (await fs.readJson(promptsPath)) as { tc1PlanRequest?: string; tc2ImplementRequest?: string };
+  if (typeof promptsData?.tc1PlanRequest !== "string" || typeof promptsData?.tc2ImplementRequest !== "string") {
+    throw new Error(`Missing or invalid template: ${promptsPath}. Run from repo root or ensure templates exist.`);
+  }
+
   let tc1Pass = false;
   let tc2Pass = false;
   try {
     const tc1Response = await completeOneTurn(
       systemPrompt,
-      prompts.tc1PlanRequest,
+      promptsData.tc1PlanRequest,
       opts
     );
     tc1Pass =
@@ -276,7 +285,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
   try {
     const tc2Response = await completeOneTurn(
       systemPrompt,
-      prompts.tc2ImplementRequest,
+      promptsData.tc2ImplementRequest,
       opts
     );
     tc2Pass =

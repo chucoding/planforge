@@ -6,7 +6,6 @@ from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_plans_dir, get_templates_root
 from planforge.utils.config import load_config
-from planforge.utils.doctor_ai_prompts import get_doctor_ai_prompts
 from planforge.providers.claude import check_claude, complete_one_turn as claude_complete_one_turn
 from planforge.providers.codex import check_codex, complete_one_turn as codex_complete_one_turn
 
@@ -104,10 +103,12 @@ def _load_workflow_mdc(project_root: str) -> str:
     installed = Path(project_root) / ".cursor" / "rules" / "workflow.mdc"
     if installed.exists():
         return installed.read_text(encoding="utf-8")
-    templates = Path(get_templates_root()) / "cursor" / "rules" / "workflow.mdc"
-    if templates.exists():
-        return templates.read_text(encoding="utf-8")
-    return "When user asks for a plan, run planforge plan. When user asks for implementation, run planforge implement."
+    templates_path = Path(get_templates_root()) / "cursor" / "rules" / "workflow.mdc"
+    if templates_path.exists():
+        return templates_path.read_text(encoding="utf-8")
+    raise FileNotFoundError(
+        f"Missing or invalid template: {templates_path}. Run from repo root or ensure templates exist."
+    )
 
 
 def _build_model_list_from_config(config: dict, has_claude: bool, has_codex: bool) -> list[tuple[str, str, bool]]:
@@ -193,13 +194,30 @@ def run_doctor_ai(args: list[str]) -> None:
 
     print("\nRunning workflow tests with " + selected[0] + " (" + selected[1] + ")...\n")
 
-    prompts = get_doctor_ai_prompts()
+    prompts_path = Path(get_templates_root()) / "doctor-ai" / "prompts.json"
+    if not prompts_path.exists():
+        raise FileNotFoundError(
+            f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
+        )
+    try:
+        prompts_data = json.loads(prompts_path.read_text(encoding="utf-8"))
+        tc1_msg = prompts_data.get("tc1PlanRequest")
+        tc2_msg = prompts_data.get("tc2ImplementRequest")
+        if not isinstance(tc1_msg, str) or not isinstance(tc2_msg, str):
+            raise RuntimeError(
+                f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
+            )
+    except (json.JSONDecodeError, OSError) as e:
+        raise RuntimeError(
+            f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
+        ) from e
+
     tc1_pass = False
     tc2_pass = False
     try:
         tc1_response = complete_one_turn(
             system_prompt,
-            prompts["tc1PlanRequest"],
+            tc1_msg,
             **opts,
         )
         tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
@@ -208,7 +226,7 @@ def run_doctor_ai(args: list[str]) -> None:
     try:
         tc2_response = complete_one_turn(
             system_prompt,
-            prompts["tc2ImplementRequest"],
+            tc2_msg,
             **opts,
         )
         tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
