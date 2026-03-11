@@ -7,7 +7,7 @@ import fs from "fs-extra";
 import { resolve } from "path";
 import { getProjectRoot, getPlansDir, getTemplatesRoot } from "../utils/paths.js";
 import { loadConfig } from "../config/load.js";
-import type { PlanForgeConfig } from "../config/presets.js";
+import type { PlanForgeConfig } from "../config/types.js";
 import { checkClaude, listModelsClaude, completeOneTurn as claudeCompleteOneTurn } from "../providers/claude.js";
 import { checkCodex, listModelsCodex, completeOneTurn as codexCompleteOneTurn } from "../providers/codex.js";
 

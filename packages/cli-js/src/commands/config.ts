@@ -7,10 +7,8 @@ import { resolve } from "path";
 import { getProjectRoot } from "../utils/paths.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
-import {
-  getDefaultConfig,
-  type PlanForgeConfig,
-} from "../config/presets.js";
+import { getDefaultConfig } from "../config/load.js";
+import type { PlanForgeConfig } from "../config/types.js";
 
 export function formatRole(config: PlanForgeConfig, role: "planner" | "implementer"): string {
   const r = config[role];

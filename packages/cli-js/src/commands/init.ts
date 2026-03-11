@@ -11,7 +11,8 @@ import { checkClaude, CLIENT_NPM_PACKAGE as CLAUDE_PKG } from "../providers/clau
 import { checkCodex, CLIENT_NPM_PACKAGE as CODEX_PKG } from "../providers/codex.js";
 import { runCommand, runCommandLive } from "../utils/shell.js";
 import { installTemplates } from "../templates/install.js";
-import { getDefaultConfig, type PlanForgeConfig } from "../config/presets.js";
+import { getDefaultConfig } from "../config/load.js";
+import type { PlanForgeConfig } from "../config/types.js";
 import { formatRole, configEqual } from "./config.js";
 
 /** First-step choice: which provider to install (one at a time), or none. */

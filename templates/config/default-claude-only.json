@@ -1,0 +1,14 @@
+{
+  "planner": {
+    "provider": "claude",
+    "model": "claude-opus-4-6",
+    "effort": "high"
+  },
+  "implementer": {
+    "provider": "claude",
+    "model": "claude-sonnet-4-6",
+    "effort": "medium"
+  },
+  "plansDir": ".cursor/plans",
+  "contextDir": ".cursor/context"
+}
