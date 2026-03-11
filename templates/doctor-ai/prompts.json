@@ -1,4 +1,5 @@
 {
   "tc1PlanRequest": "Give me a plan for this project.",
-  "tc2ImplementRequest": "Implement according to the plan."
+  "tc2ImplementRequest": "Implement according to the plan.",
+  "tc3SlashPWithImplementationStyleContent": "/p planforge init currently forces init when Claude is installed; change it to ask the user (y/n) whether to run Claude init."
 }
