@@ -8,7 +8,7 @@ import { getProjectRoot } from "../utils/paths.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
 import {
-  getPresetForProviders,
+  getDefaultConfig,
   type PlanForgeConfig,
 } from "../config/presets.js";
 
@@ -47,7 +47,7 @@ export async function runConfigSuggest(args: string[]): Promise<void> {
 
   const hasClaude = checkClaude();
   const hasCodex = checkCodex();
-  const suggested = getPresetForProviders(hasClaude, hasCodex);
+  const suggested = getDefaultConfig(hasClaude, hasCodex);
 
   if (!(await fs.pathExists(configPath))) {
     console.log("No planforge.json found. Suggested config for your installed providers:\n");

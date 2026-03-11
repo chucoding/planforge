@@ -11,7 +11,7 @@ import { checkClaude, CLIENT_NPM_PACKAGE as CLAUDE_PKG } from "../providers/clau
 import { checkCodex, CLIENT_NPM_PACKAGE as CODEX_PKG } from "../providers/codex.js";
 import { runCommand, runCommandLive } from "../utils/shell.js";
 import { installTemplates } from "../templates/install.js";
-import { getPresetForProviders, type PlanForgeConfig } from "../config/presets.js";
+import { getDefaultConfig, type PlanForgeConfig } from "../config/presets.js";
 import { formatRole, configEqual } from "./config.js";
 
 /** First-step choice: which provider to install (one at a time), or none. */
@@ -86,13 +86,13 @@ function formatRoleModel(config: PlanForgeConfig, role: "planner" | "implementer
   return s;
 }
 
-/** Draw Complete UI box with title and /p, /i model lines. Uses preset for current providers so the box reflects recommended config. */
+/** Draw Complete UI box with title and /p, /i model lines. Uses default config for current providers so the box reflects recommended config. */
 function showCompleteBox(
   hasClaude: boolean,
   hasCodex: boolean,
   title: string
 ): void {
-  const config = getPresetForProviders(hasClaude, hasCodex);
+  const config = getDefaultConfig(hasClaude, hasCodex);
   const pLine = `  /p (planning)     : ${formatRoleModel(config, "planner")}`;
   const iLine = `  /i (implementation): ${formatRoleModel(config, "implementer")}`;
   const lines = [title, pLine, iLine];
@@ -224,12 +224,12 @@ export async function runInit(args: string[]): Promise<void> {
     let createdConfig = false;
     let updatedConfig = false;
     if (!configExists) {
-      const preset = getPresetForProviders(hasClaude, hasCodex);
-      await fs.writeJson(configPath, preset, { spaces: 2 });
+      const defaultConfig = getDefaultConfig(hasClaude, hasCodex);
+      await fs.writeJson(configPath, defaultConfig, { spaces: 2 });
       createdConfig = true;
     } else {
       const current = (await fs.readJson(configPath)) as PlanForgeConfig;
-      const suggested = getPresetForProviders(hasClaude, hasCodex);
+      const suggested = getDefaultConfig(hasClaude, hasCodex);
       if (!configEqual(current, suggested) && process.stdin.isTTY) {
         console.log("");
         console.log("  planforge.json already exists. Current config differs from suggested for your installed providers.");

@@ -1,4 +1,4 @@
-"""Load planforge.json and resolve planner/implementer provider. Fallback from installed providers."""
+"""Load planforge.json and resolve planner/implementer provider. Fallback to default config when file is missing."""
 
 import json
 from pathlib import Path
@@ -8,25 +8,8 @@ from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 
 
-def load_config(project_root: str | None = None) -> dict:
-    cwd = project_root or str(Path.cwd())
-    root = get_project_root(cwd)
-    config_path = Path(root) / "planforge.json"
-    if config_path.exists():
-        try:
-            data = json.loads(config_path.read_text(encoding="utf-8"))
-            planner = data.get("planner") or {}
-            implementer = data.get("implementer") or {}
-            return {
-                "planner": {"provider": planner.get("provider", "claude"), **planner},
-                "implementer": {"provider": implementer.get("provider", "codex"), **implementer},
-                "plansDir": data.get("plansDir", ".cursor/plans"),
-                "contextDir": data.get("contextDir", ".cursor/context"),
-            }
-        except (json.JSONDecodeError, OSError):
-            pass
-    has_claude = check_claude()
-    has_codex = check_codex()
+def get_default_config(has_claude: bool, has_codex: bool) -> dict:
+    """Default config when planforge.json is missing. Based on installed providers."""
     if has_claude and has_codex:
         return {
             "planner": {"provider": "claude", "model": "claude-opus-4-6", "effort": "high"},
@@ -49,8 +32,30 @@ def load_config(project_root: str | None = None) -> dict:
             "contextDir": ".cursor/context",
         }
     return {
-        "planner": {"provider": "claude", "model": "claude-opus-4-6"},
-        "implementer": {"provider": "claude", "model": "claude-sonnet-4-6"},
+        "planner": {"provider": "claude", "model": "claude-opus-4-6", "effort": "high"},
+        "implementer": {"provider": "claude", "model": "claude-sonnet-4-6", "effort": "medium"},
         "plansDir": ".cursor/plans",
         "contextDir": ".cursor/context",
     }
+
+
+def load_config(project_root: str | None = None) -> dict:
+    cwd = project_root or str(Path.cwd())
+    root = get_project_root(cwd)
+    config_path = Path(root) / "planforge.json"
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            planner = data.get("planner") or {}
+            implementer = data.get("implementer") or {}
+            return {
+                "planner": {"provider": planner.get("provider", "claude"), **planner},
+                "implementer": {"provider": implementer.get("provider", "codex"), **implementer},
+                "plansDir": data.get("plansDir", ".cursor/plans"),
+                "contextDir": data.get("contextDir", ".cursor/context"),
+            }
+        except (json.JSONDecodeError, OSError):
+            pass
+    has_claude = check_claude()
+    has_codex = check_codex()
+    return get_default_config(has_claude, has_codex)

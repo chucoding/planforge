@@ -1,28 +1,28 @@
 /**
- * Load planforge.json or fall back to preset for current providers.
+ * Load planforge.json or fall back to default config for current providers.
  */
 
 import fs from "fs-extra";
 import { resolve } from "path";
-import { getPresetForProviders, type PlanForgeConfig } from "./presets.js";
+import { getDefaultConfig, type PlanForgeConfig } from "./presets.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
 
 export async function loadConfig(projectRoot: string): Promise<PlanForgeConfig> {
   const hasClaude = checkClaude();
   const hasCodex = checkCodex();
-  const preset = getPresetForProviders(hasClaude, hasCodex);
+  const defaultConfig = getDefaultConfig(hasClaude, hasCodex);
   const configPath = resolve(projectRoot, "planforge.json");
   if (await fs.pathExists(configPath)) {
     const loaded = (await fs.readJson(configPath)) as Partial<PlanForgeConfig>;
     const planner = (loaded.planner ?? {}) as Partial<PlanForgeConfig["planner"]>;
     const implementer = (loaded.implementer ?? {}) as Partial<PlanForgeConfig["implementer"]>;
     return {
-      planner: { ...preset.planner, ...planner, provider: planner.provider ?? preset.planner.provider },
-      implementer: { ...preset.implementer, ...implementer, provider: implementer.provider ?? preset.implementer.provider },
-      plansDir: loaded.plansDir ?? preset.plansDir,
-      contextDir: loaded.contextDir ?? preset.contextDir,
+      planner: { ...defaultConfig.planner, ...planner, provider: planner.provider ?? defaultConfig.planner.provider },
+      implementer: { ...defaultConfig.implementer, ...implementer, provider: implementer.provider ?? defaultConfig.implementer.provider },
+      plansDir: loaded.plansDir ?? defaultConfig.plansDir,
+      contextDir: loaded.contextDir ?? defaultConfig.contextDir,
     };
   }
-  return preset;
+  return defaultConfig;
 }

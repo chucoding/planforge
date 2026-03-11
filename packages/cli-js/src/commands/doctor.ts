@@ -2,13 +2,14 @@
  * planforge doctor - check environment and providers
  */
 
+import * as readline from "readline";
 import fs from "fs-extra";
 import { resolve } from "path";
-import { getProjectRoot, getPlansDir } from "../utils/paths.js";
+import { getProjectRoot, getPlansDir, getTemplatesRoot } from "../utils/paths.js";
 import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/presets.js";
-import { checkClaude } from "../providers/claude.js";
-import { checkCodex } from "../providers/codex.js";
+import { checkClaude, listModelsClaude, completeOneTurn as claudeCompleteOneTurn } from "../providers/claude.js";
+import { checkCodex, listModelsCodex, completeOneTurn as codexCompleteOneTurn } from "../providers/codex.js";
 
 type Status = "ok" | "warn" | "error";
 
@@ -117,6 +118,176 @@ export async function runDoctor(_args: string[]): Promise<void> {
 
   const hasError = checks.some((c) => c.status === "error");
   if (hasError) {
+    process.exit(1);
+  }
+}
+
+export interface DoctorAiModelOption {
+  provider: string;
+  model: string;
+  recommended: boolean;
+}
+
+function loadWorkflowMdc(projectRoot: string): string {
+  const installed = resolve(projectRoot, ".cursor", "rules", "workflow.mdc");
+  if (fs.existsSync(installed)) {
+    return fs.readFileSync(installed, "utf-8");
+  }
+  const templates = resolve(getTemplatesRoot(), "cursor", "rules", "workflow.mdc");
+  if (fs.existsSync(templates)) {
+    return fs.readFileSync(templates, "utf-8");
+  }
+  return "When user asks for a plan, run planforge plan. When user asks for implementation, run planforge implement.";
+}
+
+function buildModelListFromConfig(config: PlanForgeConfig, hasClaude: boolean, hasCodex: boolean): DoctorAiModelOption[] {
+  const seen = new Set<string>();
+  const options: DoctorAiModelOption[] = [];
+  const recommendedKey = config.planner.provider + "|" + config.planner.model;
+  for (const role of ["planner", "implementer"] as const) {
+    const r = config[role];
+    const key = r.provider + "|" + r.model;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (r.provider === "claude" && !hasClaude) continue;
+    if (r.provider === "codex" && !hasCodex) continue;
+    options.push({
+      provider: r.provider,
+      model: r.model,
+      recommended: key === recommendedKey,
+    });
+  }
+  return options;
+}
+
+function ask(question: string): Promise<string> {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(question, (answer) => {
+      rl.close();
+      resolve((answer ?? "").trim());
+    });
+  });
+}
+
+export async function runDoctorAi(args: string[]): Promise<void> {
+  const cwd = process.cwd();
+  const projectRoot = getProjectRoot(cwd);
+  const hasClaude = checkClaude();
+  const hasCodex = checkCodex();
+
+  let config: PlanForgeConfig;
+  try {
+    config = await loadConfig(projectRoot);
+  } catch (e) {
+    console.error("Failed to load planforge.json:", (e as Error).message);
+    process.exit(1);
+  }
+
+  const claudeModels = await listModelsClaude();
+  const codexModels = await listModelsCodex();
+  let options: DoctorAiModelOption[];
+  if (claudeModels !== null || codexModels !== null) {
+    options = [];
+    if (claudeModels !== null && hasClaude) {
+      const recommendedKey = config.planner.provider + "|" + config.planner.model;
+      for (const model of claudeModels) {
+        options.push({
+          provider: "claude",
+          model,
+          recommended: config.planner.provider === "claude" && config.planner.model === model,
+        });
+      }
+    }
+    if (codexModels !== null && hasCodex) {
+      for (const model of codexModels) {
+        options.push({
+          provider: "codex",
+          model,
+          recommended: config.planner.provider === "codex" && config.planner.model === model,
+        });
+      }
+    }
+    if (options.length === 0) options = buildModelListFromConfig(config, hasClaude, hasCodex);
+  } else {
+    options = buildModelListFromConfig(config, hasClaude, hasCodex);
+  }
+
+  if (options.length === 0) {
+    console.error("No AI provider available. Install Claude or Codex CLI and run planforge init.");
+    process.exit(1);
+  }
+
+  const providerArg = args.includes("--provider") ? args[args.indexOf("--provider") + 1] : undefined;
+  const modelArg = args.includes("--model") ? args[args.indexOf("--model") + 1] : undefined;
+  let selected: DoctorAiModelOption;
+  if (providerArg && modelArg) {
+    const match = options.find((o) => o.provider === providerArg && o.model === modelArg);
+    if (!match) {
+      console.error(`No matching option for --provider ${providerArg} --model ${modelArg}`);
+      process.exit(1);
+    }
+    selected = match;
+  } else if (process.stdin.isTTY) {
+    console.log("\nPlanForge doctor ai – select AI to run workflow tests\n");
+    options.forEach((o, i) => {
+      const rec = o.recommended ? "  (recommended)" : "";
+      console.log(`  ${i + 1}. ${o.provider} (${o.model})${rec}`);
+    });
+    console.log("");
+    const raw = await ask("? Select AI to run workflow tests [1-" + options.length + "]: ");
+    const n = parseInt(raw, 10);
+    if (Number.isNaN(n) || n < 1 || n > options.length) {
+      console.error("Invalid choice.");
+      process.exit(1);
+    }
+    selected = options[n - 1];
+  } else {
+    selected = options[0];
+  }
+
+  const workflowContent = loadWorkflowMdc(projectRoot);
+  const systemPrompt =
+    workflowContent +
+    "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything.";
+
+  const completeOneTurn =
+    selected.provider === "claude" ? claudeCompleteOneTurn : codexCompleteOneTurn;
+  const opts = { cwd: projectRoot, model: selected.model };
+
+  console.log("\nRunning workflow tests with " + selected.provider + " (" + selected.model + ")...\n");
+
+  let tc1Pass = false;
+  let tc2Pass = false;
+  try {
+    const tc1Response = await completeOneTurn(
+      systemPrompt,
+      "이 프로젝트에 대한 플랜을 세워줘",
+      opts
+    );
+    tc1Pass =
+      tc1Response.includes("planforge plan") ||
+      tc1Response.includes("run_plan.sh");
+  } catch (e) {
+    console.error("TC1 (plan request) error:", (e as Error).message);
+  }
+  try {
+    const tc2Response = await completeOneTurn(
+      systemPrompt,
+      "방금 플랜대로 구현해줘",
+      opts
+    );
+    tc2Pass =
+      tc2Response.includes("planforge implement") ||
+      tc2Response.includes("run_implement.sh");
+  } catch (e) {
+    console.error("TC2 (implement request) error:", (e as Error).message);
+  }
+
+  console.log("  TC1 (plan request)     : " + (tc1Pass ? "[OK] pass" : "[FAIL]"));
+  console.log("  TC2 (implement request): " + (tc2Pass ? "[OK] pass" : "[FAIL]"));
+  console.log("");
+  if (!tc1Pass || !tc2Pass) {
     process.exit(1);
   }
 }

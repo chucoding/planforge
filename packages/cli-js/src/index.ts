@@ -5,7 +5,7 @@
 
 import { Command } from "commander";
 import { runInit } from "./commands/init.js";
-import { runDoctor } from "./commands/doctor.js";
+import { runDoctor, runDoctorAi } from "./commands/doctor.js";
 import { runInstall } from "./commands/install.js";
 import { runPlan } from "./commands/plan.js";
 import { runImplement } from "./commands/implement.js";
@@ -26,11 +26,22 @@ program
     await runInit(opts.skipProviderInstall ? ["--skip-provider-install"] : []);
   });
 
-program
+const doctorCmd = program
   .command("doctor")
-  .description("Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .cursor/plans")
-  .action(async () => {
-    await runDoctor([]);
+  .description("Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .cursor/plans");
+doctorCmd.action(async () => {
+  await runDoctor([]);
+});
+doctorCmd
+  .command("ai")
+  .description("Run workflow compliance tests with AI (select model, then run TC1/TC2)")
+  .option("--provider <name>", "Use this provider (skip interactive selection)")
+  .option("--model <name>", "Use this model (use with --provider)")
+  .action(async (opts: { provider?: string; model?: string }) => {
+    const args: string[] = [];
+    if (opts.provider) args.push("--provider", opts.provider);
+    if (opts.model) args.push("--model", opts.model);
+    await runDoctorAi(args);
   });
 
 program

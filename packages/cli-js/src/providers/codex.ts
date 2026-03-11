@@ -19,6 +19,33 @@ export function checkCodex(): boolean {
   return hasCommand("codex");
 }
 
+/**
+ * Try to list available Codex models via CLI. Returns null if CLI has no free list command or it fails.
+ * Used by doctor ai to show model choices; falls back to planforge.json when null.
+ */
+export async function listModelsCodex(): Promise<string[] | null> {
+  if (!hasCommand("codex")) return null;
+  return null;
+}
+
+export interface CompleteOneTurnOpts {
+  cwd?: string;
+  model?: string;
+}
+
+/**
+ * Single-turn completion for doctor ai workflow tests. Sends systemPrompt + userMessage and returns response text.
+ */
+export async function completeOneTurn(
+  systemPrompt: string,
+  userMessage: string,
+  opts?: CompleteOneTurnOpts
+): Promise<string> {
+  const cwd = opts?.cwd ?? process.cwd();
+  const fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser: " + userMessage.trim();
+  return runCodexExec(fullPrompt, cwd, false);
+}
+
 function getRepoRoot(): string {
   return dirname(getTemplatesRoot());
 }
