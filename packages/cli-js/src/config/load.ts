@@ -11,6 +11,14 @@ import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
 import type { PlanForgeConfig } from "./types.js";
 
+/** Inline defaults used only when merging partial planforge.json (file exists). Not used when template is required. */
+const MERGE_DEFAULTS: PlanForgeConfig = {
+  planner: { provider: "claude", model: "claude-opus-4-6" },
+  implementer: { provider: "codex", model: "gpt-5.4" },
+  plansDir: ".cursor/plans",
+  contextDir: ".cursor/context",
+};
+
 /**
  * Default config when planforge.json is missing. Reads from templates/config/default-*.json.
  * Throws if the template file is missing or invalid.
@@ -37,20 +45,19 @@ export function getDefaultConfig(hasClaude: boolean, hasCodex: boolean): PlanFor
 }
 
 export async function loadConfig(projectRoot: string): Promise<PlanForgeConfig> {
-  const hasClaude = checkClaude();
-  const hasCodex = checkCodex();
-  const defaultConfig = getDefaultConfig(hasClaude, hasCodex);
   const configPath = resolve(projectRoot, "planforge.json");
   if (await fs.pathExists(configPath)) {
     const loaded = (await fs.readJson(configPath)) as Partial<PlanForgeConfig>;
     const planner = (loaded.planner ?? {}) as Partial<PlanForgeConfig["planner"]>;
     const implementer = (loaded.implementer ?? {}) as Partial<PlanForgeConfig["implementer"]>;
     return {
-      planner: { ...defaultConfig.planner, ...planner, provider: planner.provider ?? defaultConfig.planner.provider },
-      implementer: { ...defaultConfig.implementer, ...implementer, provider: implementer.provider ?? defaultConfig.implementer.provider },
-      plansDir: loaded.plansDir ?? defaultConfig.plansDir,
-      contextDir: loaded.contextDir ?? defaultConfig.contextDir,
+      planner: { ...MERGE_DEFAULTS.planner, ...planner, provider: planner.provider ?? MERGE_DEFAULTS.planner.provider },
+      implementer: { ...MERGE_DEFAULTS.implementer, ...implementer, provider: implementer.provider ?? MERGE_DEFAULTS.implementer.provider },
+      plansDir: loaded.plansDir ?? MERGE_DEFAULTS.plansDir,
+      contextDir: loaded.contextDir ?? MERGE_DEFAULTS.contextDir,
     };
   }
-  return defaultConfig;
+  const hasClaude = checkClaude();
+  const hasCodex = checkCodex();
+  return getDefaultConfig(hasClaude, hasCodex);
 }
