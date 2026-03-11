@@ -24,7 +24,7 @@
     "dev": "tsc --watch",
     "planforge": "node dist/index.js",
     "install:global": "pnpm run build && npm install -g .",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
     "@daun_jung/korean-romanizer": "^1.0.1",

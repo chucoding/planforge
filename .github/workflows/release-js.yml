@@ -19,10 +19,16 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: pnpm
           registry-url: https://registry.npmjs.org
 
       - name: Validate Cursor assets
@@ -30,7 +36,7 @@ jobs:
 
       - name: Install CLI dependencies
         working-directory: packages/cli-js
-        run: npm install
+        run: pnpm install --frozen-lockfile
 
       - name: Verify tag version matches package version
         if: github.event_name == 'push'
@@ -47,7 +53,7 @@ jobs:
 
       - name: Build CLI
         working-directory: packages/cli-js
-        run: npm run build
+        run: pnpm run build
 
       - name: Verify npm package contents
         working-directory: packages/cli-js
