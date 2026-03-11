@@ -8,6 +8,7 @@ import { resolve } from "path";
 import { getProjectRoot, getPlansDir, getTemplatesRoot } from "../utils/paths.js";
 import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
+import { getDoctorAiPrompts } from "./doctor-ai-prompts.js";
 import { checkClaude, listModelsClaude, completeOneTurn as claudeCompleteOneTurn } from "../providers/claude.js";
 import { checkCodex, listModelsCodex, completeOneTurn as codexCompleteOneTurn } from "../providers/codex.js";
 
@@ -257,12 +258,13 @@ export async function runDoctorAi(args: string[]): Promise<void> {
 
   console.log("\nRunning workflow tests with " + selected.provider + " (" + selected.model + ")...\n");
 
+  const prompts = await getDoctorAiPrompts();
   let tc1Pass = false;
   let tc2Pass = false;
   try {
     const tc1Response = await completeOneTurn(
       systemPrompt,
-      "이 프로젝트에 대한 플랜을 세워줘",
+      prompts.tc1PlanRequest,
       opts
     );
     tc1Pass =
@@ -274,7 +276,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
   try {
     const tc2Response = await completeOneTurn(
       systemPrompt,
-      "방금 플랜대로 구현해줘",
+      prompts.tc2ImplementRequest,
       opts
     );
     tc2Pass =

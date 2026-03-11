@@ -6,6 +6,7 @@ from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_plans_dir, get_templates_root
 from planforge.utils.config import load_config
+from planforge.utils.doctor_ai_prompts import get_doctor_ai_prompts
 from planforge.providers.claude import check_claude, complete_one_turn as claude_complete_one_turn
 from planforge.providers.codex import check_codex, complete_one_turn as codex_complete_one_turn
 
@@ -192,12 +193,13 @@ def run_doctor_ai(args: list[str]) -> None:
 
     print("\nRunning workflow tests with " + selected[0] + " (" + selected[1] + ")...\n")
 
+    prompts = get_doctor_ai_prompts()
     tc1_pass = False
     tc2_pass = False
     try:
         tc1_response = complete_one_turn(
             system_prompt,
-            "이 프로젝트에 대한 플랜을 세워줘",
+            prompts["tc1PlanRequest"],
             **opts,
         )
         tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
@@ -206,7 +208,7 @@ def run_doctor_ai(args: list[str]) -> None:
     try:
         tc2_response = complete_one_turn(
             system_prompt,
-            "방금 플랜대로 구현해줘",
+            prompts["tc2ImplementRequest"],
             **opts,
         )
         tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
