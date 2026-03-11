@@ -1,14 +1,12 @@
 /**
- * Load planforge.json or fall back to default config for current providers.
- * Default config is read from templates/config/default-*.json; missing or invalid template throws.
+ * loadConfig: runtime only. Reads planforge.json; throws if missing (no template fallback).
+ * getDefaultConfig: used only by init and config suggest. Reads templates/config/default-*.json.
  */
 
 import { existsSync, readFileSync } from "fs";
 import fs from "fs-extra";
 import { resolve } from "path";
 import { getTemplatesRoot } from "../utils/paths.js";
-import { checkClaude } from "../providers/claude.js";
-import { checkCodex } from "../providers/codex.js";
 import type { PlanForgeConfig } from "./types.js";
 
 /** Inline defaults used only when merging partial planforge.json (file exists). Not used when template is required. */
@@ -44,20 +42,22 @@ export function getDefaultConfig(hasClaude: boolean, hasCodex: boolean): PlanFor
   }
 }
 
+/**
+ * Load planforge.json for runtime commands (plan, implement, doctor). No template fallback.
+ * Throws if planforge.json is missing; caller should direct user to planforge init.
+ */
 export async function loadConfig(projectRoot: string): Promise<PlanForgeConfig> {
   const configPath = resolve(projectRoot, "planforge.json");
-  if (await fs.pathExists(configPath)) {
-    const loaded = (await fs.readJson(configPath)) as Partial<PlanForgeConfig>;
-    const planner = (loaded.planner ?? {}) as Partial<PlanForgeConfig["planner"]>;
-    const implementer = (loaded.implementer ?? {}) as Partial<PlanForgeConfig["implementer"]>;
-    return {
-      planner: { ...MERGE_DEFAULTS.planner, ...planner, provider: planner.provider ?? MERGE_DEFAULTS.planner.provider },
-      implementer: { ...MERGE_DEFAULTS.implementer, ...implementer, provider: implementer.provider ?? MERGE_DEFAULTS.implementer.provider },
-      plansDir: loaded.plansDir ?? MERGE_DEFAULTS.plansDir,
-      contextDir: loaded.contextDir ?? MERGE_DEFAULTS.contextDir,
-    };
+  if (!(await fs.pathExists(configPath))) {
+    throw new Error("planforge.json not found. Run planforge init.");
   }
-  const hasClaude = checkClaude();
-  const hasCodex = checkCodex();
-  return getDefaultConfig(hasClaude, hasCodex);
+  const loaded = (await fs.readJson(configPath)) as Partial<PlanForgeConfig>;
+  const planner = (loaded.planner ?? {}) as Partial<PlanForgeConfig["planner"]>;
+  const implementer = (loaded.implementer ?? {}) as Partial<PlanForgeConfig["implementer"]>;
+  return {
+    planner: { ...MERGE_DEFAULTS.planner, ...planner, provider: planner.provider ?? MERGE_DEFAULTS.planner.provider },
+    implementer: { ...MERGE_DEFAULTS.implementer, ...implementer, provider: implementer.provider ?? MERGE_DEFAULTS.implementer.provider },
+    plansDir: loaded.plansDir ?? MERGE_DEFAULTS.plansDir,
+    contextDir: loaded.contextDir ?? MERGE_DEFAULTS.contextDir,
+  };
 }
