@@ -2,6 +2,7 @@
 
 import os
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -21,11 +22,45 @@ def check_codex() -> bool:
     return has_command("codex")
 
 
+def complete_one_turn(
+    system_prompt: str,
+    user_message: str,
+    *,
+    cwd: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Single-turn completion for doctor ai workflow tests."""
+    cwd = cwd or os.getcwd()
+    full_prompt = system_prompt.strip() + "\n\n---\n\nUser: " + user_message.strip()
+    return _run_codex_exec(full_prompt, cwd, allow_plan_fallback=False)
+
+
 def _get_repo_root() -> str:
     return str(Path(get_templates_root()).parent)
 
 
-def _run_codex_exec(full_prompt: str, cwd: str) -> str:
+def _looks_like_plan(stdout: str) -> bool:
+    """True if stdout looks like a development plan (expected section headings).
+    Used to still save the plan when Codex exits 1 due to rollout recorder / cache errors.
+    """
+    t = (stdout or "").strip()
+    if len(t) < 200:
+        return False
+    has_goal = "**Goal**" in t or "## Goal" in t
+    has_later = (
+        "**Step-by-Step Plan**" in t
+        or "## Step-by-Step Plan" in t
+        or "**Validation Checklist**" in t
+        or "## Validation Checklist" in t
+    )
+    return has_goal and has_later
+
+
+def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = False) -> str:
+    """Run codex exec. When allow_plan_fallback is True (plan only), exit code 1 may still
+    return stdout if it looks like a plan (e.g. Codex 1 due to rollout/cache). Other non-zero
+    (timeout, signals) are never accepted. For implement, leave False so non-zero is always failure.
+    """
     max_buffer = 1024 * 1024
     if os.name == "nt":
         fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-")
@@ -41,10 +76,14 @@ def _run_codex_exec(full_prompt: str, cwd: str) -> str:
                 text=True,
                 timeout=300,
             )
+            out = (result.stdout or "").strip()
             if result.returncode != 0:
+                if allow_plan_fallback and result.returncode == 1 and _looks_like_plan(out):
+                    print("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.", file=sys.stderr)
+                    return out
                 msg = result.stderr or result.stdout or "Codex exited non-zero"
                 raise RuntimeError(msg)
-            return (result.stdout or "").strip()
+            return out
         finally:
             try:
                 os.unlink(temp_path)
@@ -57,10 +96,14 @@ def _run_codex_exec(full_prompt: str, cwd: str) -> str:
         text=True,
         timeout=300,
     )
+    out = (result.stdout or "").strip()
     if result.returncode != 0:
+        if allow_plan_fallback and result.returncode == 1 and _looks_like_plan(out):
+            print("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.", file=sys.stderr)
+            return out
         msg = result.stderr or result.stdout or "Codex exited non-zero"
         raise RuntimeError(msg)
-    return (result.stdout or "").strip()
+    return out
 
 
 def run_plan(goal: str, opts: dict | None = None) -> str:
@@ -74,14 +117,14 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
     except (OSError, ValueError):
         body = DEFAULT_PLANNER_FALLBACK
     if (opts.get("projectContext") or "").strip():
-        body += "\n\n---\n\nProject context (AGENTS.md):\n" + (opts["projectContext"] or "").strip()
+        body += f"\n\n---\n\nProject context ({opts.get('projectContextSource') or 'AGENTS.md'}):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("repoContext") or "").strip():
         body += "\n\n---\n\nRepository context:\n" + (opts["repoContext"] or "").strip()
     if (opts.get("context") or "").strip():
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     full_prompt = body + "\n\n---\n\nUser goal: " + goal
     try:
-        return _run_codex_exec(full_prompt, cwd)
+        return _run_codex_exec(full_prompt, cwd, allow_plan_fallback=True)
     except Exception as e:
         raise RuntimeError("Codex plan failed: " + str(e)) from e
 
@@ -97,7 +140,7 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
     except (OSError, ValueError):
         body = DEFAULT_IMPLEMENTER_FALLBACK
     if (opts.get("projectContext") or "").strip():
-        body += "\n\n---\n\nProject context (AGENTS.md):\n" + (opts["projectContext"] or "").strip()
+        body += f"\n\n---\n\nProject context ({opts.get('projectContextSource') or 'AGENTS.md'}):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("context") or "").strip():
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     if (opts.get("planContent") or "").strip():

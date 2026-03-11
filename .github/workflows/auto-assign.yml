@@ -1,0 +1,57 @@
+name: Auto Assign PR Author
+on:
+  pull_request:
+    types:
+      [opened, ready_for_review]
+jobs:
+  assign-author:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign PR author
+        run: |
+          AUTHOR="${{ github.event.pull_request.user.login }}"
+
+          JSON=$(jq -n --arg author "$AUTHOR" '{assignees: [$author]}')
+
+          echo "📝 지정할 assignee: $AUTHOR"
+
+          gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/assignees \
+            --method POST \
+            --input - <<< "$JSON"
+        env:
+          GH_TOKEN: ${{ secrets.CHUCODING_GITHUB_TOKEN }}
+
+      - name: Add label by branch prefix
+        run: |
+          # 현재 PR에 이미 라벨이 있는지 확인
+          EXISTING_LABELS=$(gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels \
+            --jq '.[].name')
+
+          if [ -n "$EXISTING_LABELS" ]; then
+            echo "✅ 이미 라벨이 있음: $EXISTING_LABELS — 스킵"
+            exit 0
+          fi
+
+          # 브랜치 접두어 → 라벨 매핑
+          BRANCH="${{ github.head_ref }}"
+          echo "🔍 브랜치명: $BRANCH"
+
+          case "$BRANCH" in
+            bugfix/*|fix/*|hotfix/*)  LABEL="bug" ;;
+            refactor/*)               LABEL="refactoring" ;;
+            docs/*)                   LABEL="docs" ;;
+            ci/*|chore/*)             LABEL="ci" ;;
+            style/*|typo/*)           LABEL="styles or typo" ;;
+            test/*)                   LABEL="test" ;;
+            release/*)                LABEL="release" ;;
+            feature/*)                LABEL="feature" ;;
+            *)                        LABEL="feature" ;;  # 기본값
+          esac
+
+          echo "🏷️ 적용할 라벨: $LABEL"
+
+          gh api repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels \
+            --method POST \
+            --field "labels[]=$LABEL"
+        env:
+          GH_TOKEN: ${{ secrets.CHUCODING_GITHUB_TOKEN }}

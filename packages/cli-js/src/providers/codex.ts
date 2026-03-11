@@ -19,15 +19,61 @@ export function checkCodex(): boolean {
   return hasCommand("codex");
 }
 
+/**
+ * Try to list available Codex models via CLI. Returns null if CLI has no free list command or it fails.
+ * Used by doctor ai to show model choices; falls back to planforge.json when null.
+ */
+export async function listModelsCodex(): Promise<string[] | null> {
+  if (!hasCommand("codex")) return null;
+  return null;
+}
+
+export interface CompleteOneTurnOpts {
+  cwd?: string;
+  model?: string;
+}
+
+/**
+ * Single-turn completion for doctor ai workflow tests. Sends systemPrompt + userMessage and returns response text.
+ */
+export async function completeOneTurn(
+  systemPrompt: string,
+  userMessage: string,
+  opts?: CompleteOneTurnOpts
+): Promise<string> {
+  const cwd = opts?.cwd ?? process.cwd();
+  const fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser: " + userMessage.trim();
+  return runCodexExec(fullPrompt, cwd, false);
+}
+
 function getRepoRoot(): string {
   return dirname(getTemplatesRoot());
 }
 
 /**
+ * True if stdout looks like a development plan (has expected section headings).
+ * Used to still save the plan when Codex exits 1 due to rollout recorder / cache errors.
+ */
+function looksLikePlan(stdout: string): boolean {
+  const t = (stdout ?? "").trim();
+  if (t.length < 200) return false;
+  const hasGoal =
+    t.includes("**Goal**") || t.includes("## Goal");
+  const hasLaterSection =
+    t.includes("**Step-by-Step Plan**") ||
+    t.includes("## Step-by-Step Plan") ||
+    t.includes("**Validation Checklist**") ||
+    t.includes("## Validation Checklist");
+  return hasGoal && hasLaterSection;
+}
+
+/**
  * Run "codex exec" with the given prompt. On Windows uses temp file + PowerShell to avoid
  * EINVAL from spawning .cmd directly (CVE-2024-27980) and to avoid shell splitting long args.
+ * When allowPlanFallback is true, non-zero exit is still treated as success if stdout looks like a plan
+ * (used only for runPlan; runImplement must not treat non-zero as success).
  */
-function runCodexExec(fullPrompt: string, cwd: string): string {
+function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false): string {
   const opts = { cwd, encoding: "utf-8" as const, maxBuffer: 1024 * 1024 };
 
   if (process.platform === "win32") {
@@ -35,13 +81,18 @@ function runCodexExec(fullPrompt: string, cwd: string): string {
     try {
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' | codex exec -`;
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | codex exec -`;
       const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
+      const out = (result.stdout ?? "").trim();
       if (result.status !== 0) {
+        if (allowPlanFallback && result.status === 1 && looksLikePlan(out)) {
+          console.error("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.");
+          return out;
+        }
         const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
         throw new Error(String(msg));
       }
-      return (result.stdout ?? "").trim();
+      return out;
     } finally {
       try {
         unlinkSync(tempPath);
@@ -52,11 +103,16 @@ function runCodexExec(fullPrompt: string, cwd: string): string {
   }
 
   const result = spawnSync("codex", ["exec", fullPrompt], { ...opts, shell: false });
+  const out = (result.stdout ?? "").trim();
   if (result.status !== 0) {
+    if (allowPlanFallback && result.status === 1 && looksLikePlan(out)) {
+      console.error("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.");
+      return out;
+    }
     const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Codex exited non-zero";
     throw new Error(String(msg));
   }
-  return (result.stdout ?? "").trim();
+  return out;
 }
 
 /**
@@ -72,7 +128,7 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string): Promise<string>
       const tempPath = join(tmpdir(), "planforge-" + randomBytes(8).toString("hex") + ".txt");
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' | codex exec -`;
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | codex exec -`;
       const child = spawn("powershell", ["-NoProfile", "-Command", script], {
         ...opts,
         stdio: ["ignore", "pipe", "pipe"],
@@ -140,7 +196,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
     );
     let body = systemPrompt.trim();
     if (opts?.projectContext?.trim()) {
-      body += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.repoContext?.trim()) {
       body += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
@@ -152,7 +208,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   } catch {
     let fallback = DEFAULT_PLANNER_FALLBACK;
     if (opts?.projectContext?.trim()) {
-      fallback += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      fallback += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.repoContext?.trim()) {
       fallback += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
@@ -164,7 +220,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   }
 
   try {
-    return runCodexExec(fullPrompt, cwd);
+    return runCodexExec(fullPrompt, cwd, true);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
@@ -192,7 +248,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     );
     let body = systemPrompt.trim();
     if (opts?.projectContext?.trim()) {
-      body += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.context?.trim()) {
       body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
@@ -213,7 +269,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
   } catch {
     let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
     if (opts?.projectContext?.trim()) {
-      fallback += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      fallback += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.context?.trim()) {
       fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();

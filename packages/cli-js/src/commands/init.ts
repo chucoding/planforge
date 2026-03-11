@@ -11,19 +11,9 @@ import { checkClaude, CLIENT_NPM_PACKAGE as CLAUDE_PKG } from "../providers/clau
 import { checkCodex, CLIENT_NPM_PACKAGE as CODEX_PKG } from "../providers/codex.js";
 import { runCommand, runCommandLive } from "../utils/shell.js";
 import { installTemplates } from "../templates/install.js";
-import { getPresetForProviders, type PlanForgeConfig } from "../config/presets.js";
+import { getDefaultConfig } from "../config/load.js";
+import type { PlanForgeConfig } from "../config/types.js";
 import { formatRole, configEqual } from "./config.js";
-
-const DEFAULT_AGENTS_MD = `# AGENTS.md
-
-Codex/OpenAI agent context for this project.
-Customize this file to give the implementer (/i) relevant project context.
-`;
-
-const DEFAULT_CLAUDE_MD = `# CLAUDE.md
-
-Claude project context. Run 'claude /init' after signing in, or edit this file.
-`;
 
 /** First-step choice: which provider to install (one at a time), or none. */
 export type FirstProviderChoice = "claude" | "codex" | "no";
@@ -97,13 +87,13 @@ function formatRoleModel(config: PlanForgeConfig, role: "planner" | "implementer
   return s;
 }
 
-/** Draw Complete UI box with title and /p, /i model lines. Uses preset for current providers so the box reflects recommended config. */
+/** Draw Complete UI box with title and /p, /i model lines. Uses default config for current providers so the box reflects recommended config. */
 function showCompleteBox(
   hasClaude: boolean,
   hasCodex: boolean,
   title: string
 ): void {
-  const config = getPresetForProviders(hasClaude, hasCodex);
+  const config = getDefaultConfig(hasClaude, hasCodex);
   const pLine = `  /p (planning)     : ${formatRoleModel(config, "planner")}`;
   const iLine = `  /i (implementation): ${formatRoleModel(config, "implementer")}`;
   const lines = [title, pLine, iLine];
@@ -150,7 +140,7 @@ export async function runInit(args: string[]): Promise<void> {
     let finishedWithCodexOnly = false;
     let showGuideAtEnd = false;
 
-    if (!skipProviderInstall && (!hasClaude || !hasCodex)) {
+    if (!skipProviderInstall) {
       const first = await promptFirstProvider(hasClaude, hasCodex);
       if (first !== "no") {
         if (first === "claude" && !hasClaude) {
@@ -220,20 +210,7 @@ export async function runInit(args: string[]): Promise<void> {
         runCommand("claude", ["/init"], projectRoot);
       } catch (err) {
         console.warn("Warning: claude /init failed:", (err as Error).message);
-        const claudeMdPath = resolve(projectRoot, "CLAUDE.md");
-        if (!(await fs.pathExists(claudeMdPath))) {
-          await fs.writeFile(claudeMdPath, DEFAULT_CLAUDE_MD, "utf-8");
-          console.log("  Created CLAUDE.md");
-        }
-        console.log("  Claude /init failed (sign in may be required). Run 'claude' to sign in, then run 'claude /init' in this project.");
-      }
-    }
-
-    if (hasCodex) {
-      const agentsPath = resolve(projectRoot, "AGENTS.md");
-      if (!(await fs.pathExists(agentsPath))) {
-        await fs.writeFile(agentsPath, DEFAULT_AGENTS_MD, "utf-8");
-        console.log("  Created AGENTS.md");
+        console.log("  Run 'claude' to sign in.");
       }
     }
 
@@ -241,18 +218,19 @@ export async function runInit(args: string[]): Promise<void> {
 
     const plansDir = getPlansDir(projectRoot);
     await fs.ensureDir(plansDir);
+    await fs.ensureDir(resolve(projectRoot, ".cursor", "context"));
 
     const configPath = resolve(projectRoot, "planforge.json");
     const configExists = await fs.pathExists(configPath);
     let createdConfig = false;
     let updatedConfig = false;
     if (!configExists) {
-      const preset = getPresetForProviders(hasClaude, hasCodex);
-      await fs.writeJson(configPath, preset, { spaces: 2 });
+      const defaultConfig = getDefaultConfig(hasClaude, hasCodex);
+      await fs.writeJson(configPath, defaultConfig, { spaces: 2 });
       createdConfig = true;
     } else {
       const current = (await fs.readJson(configPath)) as PlanForgeConfig;
-      const suggested = getPresetForProviders(hasClaude, hasCodex);
+      const suggested = getDefaultConfig(hasClaude, hasCodex);
       if (!configEqual(current, suggested) && process.stdin.isTTY) {
         console.log("");
         console.log("  planforge.json already exists. Current config differs from suggested for your installed providers.");
@@ -281,6 +259,7 @@ export async function runInit(args: string[]): Promise<void> {
       console.log("");
     }
     console.log("  Created .cursor/plans");
+    console.log("  Created .cursor/context");
     if (createdConfig) {
       console.log("  Created planforge.json");
     } else if (updatedConfig) {

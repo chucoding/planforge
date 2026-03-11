@@ -2,7 +2,7 @@
  * Claude provider - planning (e.g. /p)
  */
 
-import { execSync, spawn } from "child_process";
+import { execSync, spawn, spawnSync } from "child_process";
 import { readFile } from "fs/promises";
 import { resolve, dirname } from "path";
 import { hasCommand } from "../utils/shell.js";
@@ -14,6 +14,53 @@ export const CLIENT_NPM_PACKAGE = "@anthropic-ai/claude-code";
 
 export function checkClaude(): boolean {
   return hasCommand("claude");
+}
+
+/**
+ * Try to list available Claude models via CLI. Returns null if CLI has no free list command or it fails.
+ * Used by doctor ai to show model choices; falls back to planforge.json when null.
+ */
+export async function listModelsClaude(): Promise<string[] | null> {
+  if (!hasCommand("claude")) return null;
+  return null;
+}
+
+export interface CompleteOneTurnOpts {
+  cwd?: string;
+  model?: string;
+}
+
+/**
+ * Single-turn completion for doctor ai workflow tests. Sends systemPrompt + userMessage and returns response text.
+ */
+export async function completeOneTurn(
+  systemPrompt: string,
+  userMessage: string,
+  opts?: CompleteOneTurnOpts
+): Promise<string> {
+  const cwd = opts?.cwd ?? process.cwd();
+  const args: string[] = ["--system-prompt", systemPrompt.trim(), "-p", userMessage.trim()];
+  if (opts?.model) {
+    args.unshift("--model", opts.model);
+  }
+  try {
+    const result = spawnSync("claude", args, {
+      encoding: "utf-8",
+      cwd,
+      maxBuffer: 512 * 1024,
+    });
+    if (result.status !== 0) {
+      const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Claude exited non-zero";
+      throw new Error(String(msg));
+    }
+    const out = (result.stdout ?? "").trim();
+    return typeof out === "string" ? out : String(out);
+  } catch (err) {
+    const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
+      ?? (err as { stderr?: string }).stderr
+      ?? (err as Error).message;
+    throw new Error("Claude completeOneTurn failed: " + msg);
+  }
 }
 
 /**
@@ -33,7 +80,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
     );
     let body = systemPrompt.trim();
     if (opts?.projectContext?.trim()) {
-      body += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "CLAUDE.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.repoContext?.trim()) {
       body += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
@@ -45,7 +92,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   } catch {
     let fallback = "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist.";
     if (opts?.projectContext?.trim()) {
-      fallback += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      fallback += `\n\n---\n\nProject context (${opts.projectContextSource ?? "CLAUDE.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.repoContext?.trim()) {
       fallback += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
@@ -92,7 +139,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     );
     let body = systemPrompt.trim();
     if (opts?.projectContext?.trim()) {
-      body += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "CLAUDE.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.context?.trim()) {
       body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
@@ -113,7 +160,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
   } catch {
     let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
     if (opts?.projectContext?.trim()) {
-      fallback += "\n\n---\n\nProject context (AGENTS.md):\n" + opts.projectContext.trim();
+      fallback += `\n\n---\n\nProject context (${opts.projectContextSource ?? "CLAUDE.md"}):\n${opts.projectContext.trim()}`;
     }
     if (opts?.context?.trim()) {
       fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();

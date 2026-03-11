@@ -14,6 +14,7 @@ def install_templates(
     templates_root = Path(get_templates_root())
     cursor_dir = Path(project_root) / ".cursor"
     cursor_dir.mkdir(parents=True, exist_ok=True)
+    (cursor_dir / "context").mkdir(parents=True, exist_ok=True)
 
     cursor_templates = templates_root / "cursor"
     skills_src = cursor_templates / "skills"
@@ -35,7 +36,7 @@ def install_templates(
             shutil.rmtree(rules_dest)
         shutil.copytree(rules_src, rules_dest)
 
-    config_src = templates_root / "config" / "planforge.json"
+    config_src = templates_root / "config" / "default-both.json"
     config_dest = Path(project_root) / "planforge.json"
     if config_src.exists() and (force or not config_dest.exists()):
         shutil.copy2(config_src, config_dest)

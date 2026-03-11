@@ -6,6 +6,7 @@ from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_plans_dir
 from planforge.utils.config import load_config
+from planforge.utils.context import load_merged_context
 from planforge.utils.repo_context import get_repo_context
 from planforge.utils.project_context import get_project_context
 from planforge.providers.codex import check_codex, run_plan as codex_run_plan
@@ -68,20 +69,16 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
         raise SystemExit(1)
     cwd = str(Path.cwd())
     project_root = get_project_root(cwd)
-    context_parts = []
-    if opts.get("context_file"):
-        ctx_path = Path(cwd) / opts["context_file"]
-        try:
-            content = ctx_path.read_text(encoding="utf-8").strip()
-            if content:
-                context_parts.append(content)
-        except OSError as e:
-            print("Failed to read context file:", e, file=__import__("sys").stderr)
-            raise SystemExit(1)
-    if (opts.get("context") or "").strip():
-        context_parts.append(opts["context"].strip())
-    context = "\n\n".join(context_parts) if context_parts else None
     config = load_config(project_root)
+    try:
+        context = load_merged_context(
+            project_root,
+            context_dir=opts.get("context_dir") or config.get("contextDir"),
+            inline_context=opts.get("context"),
+        )
+    except OSError as e:
+        print("Failed to load context:", e, file=__import__("sys").stderr)
+        raise SystemExit(1)
     provider = config["planner"]["provider"]
     check, run = _get_planner_runner(provider)
     if not check or not run:
@@ -91,12 +88,13 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
         print(f"{provider} CLI not found. Install the provider CLI to use planforge plan.", file=__import__("sys").stderr)
         raise SystemExit(1)
     repo_context = get_repo_context(project_root, goal)
-    project_context = get_project_context(project_root)
+    project_context, project_context_source = get_project_context(project_root, provider)
     run_opts = {
         "cwd": project_root,
         "context": context,
         "repoContext": repo_context,
         "projectContext": project_context,
+        "projectContextSource": project_context_source,
     }
     try:
         plan_body = run(goal, run_opts)

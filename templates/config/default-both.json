@@ -8,5 +8,6 @@
     "provider": "codex",
     "model": "gpt-5.4"
   },
-  "plansDir": ".cursor/plans"
+  "plansDir": ".cursor/plans",
+  "contextDir": ".cursor/context"
 }

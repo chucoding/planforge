@@ -7,10 +7,8 @@ import { resolve } from "path";
 import { getProjectRoot } from "../utils/paths.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
-import {
-  getPresetForProviders,
-  type PlanForgeConfig,
-} from "../config/presets.js";
+import { getDefaultConfig } from "../config/load.js";
+import type { PlanForgeConfig } from "../config/types.js";
 
 export function formatRole(config: PlanForgeConfig, role: "planner" | "implementer"): string {
   const r = config[role];
@@ -23,7 +21,9 @@ export function formatRole(config: PlanForgeConfig, role: "planner" | "implement
 export function configEqual(a: PlanForgeConfig, b: PlanForgeConfig): boolean {
   return (
     JSON.stringify(a.planner) === JSON.stringify(b.planner) &&
-    JSON.stringify(a.implementer) === JSON.stringify(b.implementer)
+    JSON.stringify(a.implementer) === JSON.stringify(b.implementer) &&
+    a.plansDir === b.plansDir &&
+    a.contextDir === b.contextDir
   );
 }
 
@@ -45,7 +45,7 @@ export async function runConfigSuggest(args: string[]): Promise<void> {
 
   const hasClaude = checkClaude();
   const hasCodex = checkCodex();
-  const suggested = getPresetForProviders(hasClaude, hasCodex);
+  const suggested = getDefaultConfig(hasClaude, hasCodex);
 
   if (!(await fs.pathExists(configPath))) {
     console.log("No planforge.json found. Suggested config for your installed providers:\n");

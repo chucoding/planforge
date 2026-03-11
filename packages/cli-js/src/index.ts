@@ -5,7 +5,7 @@
 
 import { Command } from "commander";
 import { runInit } from "./commands/init.js";
-import { runDoctor } from "./commands/doctor.js";
+import { runDoctor, runDoctorAi } from "./commands/doctor.js";
 import { runInstall } from "./commands/install.js";
 import { runPlan } from "./commands/plan.js";
 import { runImplement } from "./commands/implement.js";
@@ -20,17 +20,28 @@ program
 
 program
   .command("init")
-  .description("Detect providers, run claude /init, create AGENTS.md, install Cursor slash commands, create .cursor/plans and planforge.json")
+  .description("Detect providers, run claude /init when available, install Cursor slash commands, create .cursor/plans and planforge.json")
   .option("--skip-provider-install", "Skip interactive provider (Claude/Codex) install prompt")
   .action(async (opts: { skipProviderInstall?: boolean }) => {
     await runInit(opts.skipProviderInstall ? ["--skip-provider-install"] : []);
   });
 
-program
+const doctorCmd = program
   .command("doctor")
-  .description("Check environment: Claude CLI, Codex CLI, CLAUDE.md, AGENTS.md, planforge.json, .cursor/plans")
-  .action(async () => {
-    await runDoctor([]);
+  .description("Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .cursor/plans");
+doctorCmd.action(async () => {
+  await runDoctor([]);
+});
+doctorCmd
+  .command("ai")
+  .description("Run workflow compliance tests with AI (select model, then run TC1/TC2)")
+  .option("--provider <name>", "Use this provider (skip interactive selection)")
+  .option("--model <name>", "Use this model (use with --provider)")
+  .action(async (opts: { provider?: string; model?: string }) => {
+    const args: string[] = [];
+    if (opts.provider) args.push("--provider", opts.provider);
+    if (opts.model) args.push("--model", opts.model);
+    await runDoctorAi(args);
   });
 
 program
@@ -45,9 +56,9 @@ program
   .command("plan")
   .description("Generate a development plan and save to .cursor/plans (uses planner from planforge.json)")
   .argument("[goal...]", "Planning goal (e.g. design auth refresh token)")
-  .option("--context-file <path>", "Path to conversation context file (e.g. .cursor/chat-context.txt)")
+  .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/context)")
   .option("--context <text>", "Conversation context text to pass to the planner")
-  .action(async (goalParts: string[], opts: { contextFile?: string; context?: string }) => {
+  .action(async (goalParts: string[], opts: { contextDir?: string; context?: string }) => {
     await runPlan(goalParts, opts);
   });
 
@@ -55,11 +66,11 @@ program
   .command("implement")
   .description("Run implementation (uses implementer from planforge.json)")
   .argument("[prompt...]", "Implementation prompt or task")
-  .option("--context-file <path>", "Path to conversation context file (e.g. .cursor/chat-context.txt)")
+  .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/context)")
   .option("--context <text>", "Conversation context text to pass to the implementer")
   .option("--plan-file <path>", "Path to plan file (default: index.json activePlan or latest .plan.md)")
   .option("--files <paths...>", "File paths to focus on (overrides plan's Files Likely to Change)")
-  .action(async (promptParts: string[], opts: { contextFile?: string; context?: string; planFile?: string; files?: string[] }) => {
+  .action(async (promptParts: string[], opts: { contextDir?: string; context?: string; planFile?: string; files?: string[] }) => {
     await runImplement(promptParts, opts);
   });
 

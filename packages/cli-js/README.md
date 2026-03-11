@@ -31,12 +31,12 @@ Then use `/p` for planning and `/i` for implementation in Cursor, or run:
 
 | Command | Description |
 | ------- | ----------- |
-| `planforge init` | Detect providers, create `planforge.json`, install Cursor skills/rules. Use `--skip-provider-install` to skip provider install. |
-| `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/`. |
-| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. |
+| `planforge init` | Shows provider check (Claude/Codex) first; detects providers, runs `claude /init` when Claude is available, creates `AGENTS.md` when Codex is available, creates `planforge.json`, and installs Cursor skills/rules. Use `--skip-provider-install` to skip provider prompt. |
+| `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/`. Claude prefers `CLAUDE.md`; Codex prefers `AGENTS.md`. |
+| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`, with the same provider-specific instruction file preference. |
 | `planforge config show` | Print current `planforge.json`. |
 | `planforge config suggest [--apply]` | Show or apply suggested config for installed providers. |
-| `planforge doctor` | Check Claude/Codex CLI, config, and `.cursor/plans`. |
+| `planforge doctor` | Check Claude/Codex CLI, provider instruction files, config, and `.cursor/plans`. |
 | `planforge install [-f]` | Install `.cursor/skills` and `.cursor/rules`; `-f` overwrites existing `planforge.json`. |
 
 ## License

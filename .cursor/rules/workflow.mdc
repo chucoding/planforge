@@ -1,12 +1,12 @@
 ---
 description: PlanForge workflow rules
 globs:
-alwaysApply: false
+alwaysApply: true
 ---
 
 # PlanForge Workflow
 
-- **When the user uses /p or asks for a plan/design/structure:**  
-  Do **not** write a plan or design document yourself. You **must** run `planforge plan "<goal>"` (or `.cursor/skills/p/scripts/run_plan.sh` with the goal as arguments). The CLI creates `.cursor/plans/<summary>-<hash>.plan.md`. After it completes, read that file and summarize or reference it in your reply. If the command fails, report the error and suggest fixes.
-- **When the user uses /i or asks for implementation:**  
-  Use the implementer (planforge implement or the i skill) as configured; do not bypass it.
+- **When the user uses /p or asks for a plan/design/structure:**
+  You must run `planforge plan "<goal>"` or `.cursor/skills/p/scripts/run_plan.sh` with the user's goal. Do not write any plan/design output directly as a fallback. After the command succeeds, read `.cursor/plans/<summary>-<hash>.plan.md` and summarize/reference it. If command execution fails, return the error and suggested fixes only.
+- **When the user uses /i or asks for implementation:**
+  You must run `planforge implement "<prompt>"` or `.cursor/skills/i/scripts/run_implement.sh` with the user's request, and for Cursor `/i` you must start it in the background without a short timeout so it keeps running in the terminal. Do not produce direct implementation output without running the command. Prefer the active plan in `.cursor/plans/index.json` (`activePlan`) or the latest `.plan.md`. After the process starts, immediately tell the user implement is running in the terminal and end the turn. If the command cannot be started, return the error and suggested fixes only.

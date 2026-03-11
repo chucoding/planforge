@@ -10,6 +10,7 @@ import { getProjectRoot } from "../utils/paths.js";
 import { getActivePlanPath } from "../utils/active-plan.js";
 import { parseFilesFromPlan } from "../utils/plan-files.js";
 import { getProjectContext } from "../utils/project-context.js";
+import { loadMergedContext } from "../utils/context.js";
 import { loadConfig } from "../config/load.js";
 import { getImplementerRunner } from "../providers/registry.js";
 
@@ -33,29 +34,11 @@ function extractFilesFromOutput(text: string): { path: string; content: string }
 }
 
 export interface ImplementCliOpts {
-  contextFile?: string;
+  contextDir?: string;
   context?: string;
   planFile?: string;
   /** File paths to focus on (overrides plan's Files Likely to Change). */
   files?: string[];
-}
-
-async function resolveContext(opts: ImplementCliOpts | undefined, cwd: string): Promise<string | undefined> {
-  if (!opts) return undefined;
-  const parts: string[] = [];
-  if (opts.contextFile) {
-    const absPath = resolve(cwd, opts.contextFile);
-    try {
-      const content = await readFile(absPath, "utf-8");
-      if (content.trim()) parts.push(content.trim());
-    } catch (err) {
-      console.error("Failed to read context file:", (err as Error).message);
-      process.exit(1);
-    }
-  }
-  if (opts.context?.trim()) parts.push(opts.context.trim());
-  if (parts.length === 0) return undefined;
-  return parts.join("\n\n");
 }
 
 /** True if path looks like a glob (contains * or **). */
@@ -142,7 +125,17 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
 
   const cwd = process.cwd();
   const projectRoot = getProjectRoot(cwd);
-  const context = await resolveContext(opts, cwd);
+  const config = await loadConfig(projectRoot);
+  let context: string | undefined;
+  try {
+    context = await loadMergedContext(projectRoot, {
+      contextDir: opts?.contextDir ?? config.contextDir,
+      inlineContext: opts?.context,
+    });
+  } catch (err) {
+    console.error("Failed to load context:", (err as Error).message);
+    process.exit(1);
+  }
 
   let planContent: string | undefined;
   if (opts?.planFile) {
@@ -164,7 +157,6 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
     }
   }
 
-  const config = await loadConfig(projectRoot);
   const runner = getImplementerRunner(config.implementer.provider);
 
   if (!runner) {
@@ -180,7 +172,10 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
   const filesToChange = opts?.files?.length ? opts.files : parseFilesFromPlan(planContent);
   const codeContext =
     filesToChange.length > 0 ? await buildCodeContext(projectRoot, filesToChange) : undefined;
-  const projectContext = getProjectContext(projectRoot);
+  const { content: projectContext, source: projectContextSource } = getProjectContext(
+    projectRoot,
+    config.implementer.provider
+  );
   const recentCommitsPerFile =
     filesToChange.length > 0 ? buildRecentCommitsForFiles(projectRoot, filesToChange) : undefined;
 
@@ -192,6 +187,7 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
       filesToChange: filesToChange.length > 0 ? filesToChange : undefined,
       codeContext,
       projectContext,
+      projectContextSource,
       recentCommitsPerFile,
     });
     const extracted = extractFilesFromOutput(result);

@@ -20,6 +20,31 @@ def check_claude() -> bool:
     return has_command("claude")
 
 
+def complete_one_turn(
+    system_prompt: str,
+    user_message: str,
+    *,
+    cwd: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Single-turn completion for doctor ai workflow tests."""
+    cwd = cwd or os.getcwd()
+    args = ["--system-prompt", system_prompt.strip(), "-p", user_message.strip()]
+    if model:
+        args = ["--model", model] + args
+    result = subprocess.run(
+        ["claude"] + args,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        msg = result.stderr or result.stdout or "Claude exited non-zero"
+        raise RuntimeError("Claude complete_one_turn failed: " + msg)
+    return (result.stdout or "").strip()
+
+
 def _get_repo_root() -> str:
     return str(Path(get_templates_root()).parent)
 
@@ -35,7 +60,7 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
     except (OSError, ValueError):
         body = DEFAULT_PLANNER_FALLBACK
     if (opts.get("projectContext") or "").strip():
-        body += "\n\n---\n\nProject context (AGENTS.md):\n" + (opts["projectContext"] or "").strip()
+        body += f"\n\n---\n\nProject context ({opts.get('projectContextSource') or 'CLAUDE.md'}):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("repoContext") or "").strip():
         body += "\n\n---\n\nRepository context:\n" + (opts["repoContext"] or "").strip()
     if (opts.get("context") or "").strip():
@@ -66,7 +91,7 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
     except (OSError, ValueError):
         body = DEFAULT_IMPLEMENTER_FALLBACK
     if (opts.get("projectContext") or "").strip():
-        body += "\n\n---\n\nProject context (AGENTS.md):\n" + (opts["projectContext"] or "").strip()
+        body += f"\n\n---\n\nProject context ({opts.get('projectContextSource') or 'CLAUDE.md'}):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("context") or "").strip():
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     if (opts.get("planContent") or "").strip():

@@ -1,6 +1,7 @@
 # node
 node_modules
 .pnpm-store
+.npm-cache
 dist
 build
 npm-debug.log
@@ -16,6 +17,10 @@ __pycache__
 
 # cursor
 .cursor/plans
+.cursor/context
+.cursor/rules/code-comments.mdc
+.cursor/rules/notion.mdc
+.cursor/rules/pr-writing.mdc
 
 # logs
 *.log
