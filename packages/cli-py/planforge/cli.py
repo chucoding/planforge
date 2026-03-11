@@ -22,10 +22,26 @@ def init(skip_provider_install: bool) -> None:
     run_init(["--skip-provider-install"] if skip_provider_install else [])
 
 
-@main.command()
-def doctor() -> None:
+@main.group(invoke_without_command=True)
+@click.pass_context
+def doctor(ctx: click.Context) -> None:
     """Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .cursor/plans."""
-    run_doctor([])
+    if ctx.invoked_subcommand is None:
+        run_doctor([])
+
+
+@doctor.command("ai")
+@click.option("--provider", help="Use this provider (skip interactive selection)")
+@click.option("--model", help="Use this model (use with --provider)")
+def doctor_ai(provider: str | None, model: str | None) -> None:
+    """Run workflow compliance tests with AI (select model, then run TC1/TC2)."""
+    args: list[str] = []
+    if provider:
+        args.extend(["--provider", provider])
+    if model:
+        args.extend(["--model", model])
+    from planforge.commands.doctor import run_doctor_ai
+    run_doctor_ai(args)
 
 
 @main.command()

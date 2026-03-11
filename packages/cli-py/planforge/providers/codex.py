@@ -22,6 +22,19 @@ def check_codex() -> bool:
     return has_command("codex")
 
 
+def complete_one_turn(
+    system_prompt: str,
+    user_message: str,
+    *,
+    cwd: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Single-turn completion for doctor ai workflow tests."""
+    cwd = cwd or os.getcwd()
+    full_prompt = system_prompt.strip() + "\n\n---\n\nUser: " + user_message.strip()
+    return _run_codex_exec(full_prompt, cwd, allow_plan_fallback=False)
+
+
 def _get_repo_root() -> str:
     return str(Path(get_templates_root()).parent)
 

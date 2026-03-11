@@ -39,7 +39,7 @@ export async function installTemplates(
     await fs.copy(rulesSrc, rulesDest, { overwrite: true });
   }
 
-  const configSrc = resolve(templatesRoot, "config", "planforge.json");
+  const configSrc = resolve(templatesRoot, "config", "default-both.json");
   const configDest = resolve(projectRoot, "planforge.json");
   if (await fs.pathExists(configSrc)) {
     if (options.force || !(await fs.pathExists(configDest))) {

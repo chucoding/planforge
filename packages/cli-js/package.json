@@ -19,7 +19,8 @@
     "planforge": "dist/index.js"
   },
   "scripts": {
-    "build": "tsc",
+    "check:templates": "node scripts/check-templates.js",
+    "build": "pnpm run check:templates && tsc",
     "dev": "tsc --watch",
     "planforge": "node dist/index.js",
     "install:global": "pnpm run build && npm install -g .",

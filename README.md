@@ -61,6 +61,7 @@ Both skills are script-first by design: they must execute the bundled `.cursor/s
 | `planforge config show` | Print current `planforge.json`. |
 | `planforge config suggest [--apply]` | Show suggested config for installed providers; `--apply` writes it to `planforge.json`. |
 | `planforge doctor` | Check Claude/Codex CLI, provider instruction files (`CLAUDE.md`/`AGENTS.md`), `planforge.json`, `.cursor/plans`. |
+| `planforge doctor ai` | Run workflow compliance tests with AI: list models (from planforge.json), show selection UI with (recommended) for current planner, then run TC1/TC2. Use `--provider` and `--model` to skip UI. |
 | `planforge install [-f]` | Install `.cursor/skills` and `.cursor/rules`; `-f` overwrites existing `planforge.json`. |
 
 ## Installation
@@ -95,14 +96,14 @@ Flow:
 2. Optional install for missing provider(s).
 3. Sign-in handoff to installed CLI when needed.
 4. Optional install of the other provider.
-5. Create or update `planforge.json` using provider-aware presets.
+5. Create or update `planforge.json` (default config is generated from installed providers).
 6. Run `claude /init` when Claude is available, create `AGENTS.md` when Codex is available, then install Cursor skills/rules and create `.cursor/plans` and `.cursor/context`.
 
 Use `--skip-provider-install` to skip provider installation prompts and only set up config/directories.
 
-## `planforge.json` Presets
+## `planforge.json` default config
 
-Presets are selected from installed providers:
+When `planforge.json` is missing or created by init, default config is chosen from installed providers:
 
 | Installed | Planner | Implementer |
 | --------- | ------- | ----------- |
@@ -111,6 +112,8 @@ Presets are selected from installed providers:
 | Codex only | `codex / gpt-5.4` | `codex / gpt-5.4` |
 
 Run `planforge config suggest` to preview, or `planforge config suggest --apply` to write.
+
+**Doctor AI**: `planforge doctor ai` shows available models (from planforge.json when CLI does not provide a free model list), lets you choose which AI to run workflow tests with, and marks the current planner in planforge.json as **(recommended)**. It then runs two tests (plan request, implement request) and reports pass/fail.
 
 ## Example Structure
 

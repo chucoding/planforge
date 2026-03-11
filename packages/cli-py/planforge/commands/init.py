@@ -8,36 +8,7 @@ from planforge.utils.shell import run_command
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 from planforge.templates.install import install_templates
-
-
-def _get_preset_for_providers(has_claude: bool, has_codex: bool) -> dict:
-    if has_claude and has_codex:
-        return {
-            "planner": {"provider": "claude", "model": "claude-opus-4-6", "effort": "high"},
-            "implementer": {"provider": "codex", "model": "gpt-5.4"},
-            "plansDir": ".cursor/plans",
-            "contextDir": ".cursor/context",
-        }
-    if has_claude:
-        return {
-            "planner": {"provider": "claude", "model": "claude-opus-4-6", "effort": "high"},
-            "implementer": {"provider": "claude", "model": "claude-sonnet-4-6", "effort": "medium"},
-            "plansDir": ".cursor/plans",
-            "contextDir": ".cursor/context",
-        }
-    if has_codex:
-        return {
-            "planner": {"provider": "codex", "model": "gpt-5.4", "reasoning": "high"},
-            "implementer": {"provider": "codex", "model": "gpt-5.4", "reasoning": "low"},
-            "plansDir": ".cursor/plans",
-            "contextDir": ".cursor/context",
-        }
-    return {
-        "planner": {"provider": "claude", "model": "claude-opus-4-6", "effort": "high"},
-        "implementer": {"provider": "claude", "model": "claude-sonnet-4-6", "effort": "medium"},
-        "plansDir": ".cursor/plans",
-        "contextDir": ".cursor/context",
-    }
+from planforge.utils.config import get_default_config
 
 
 def run_init(args: list[str]) -> None:
@@ -73,7 +44,7 @@ def run_init(args: list[str]) -> None:
         config_path = Path(project_root) / "planforge.json"
         if not config_path.exists():
             config_path.write_text(
-                json.dumps(_get_preset_for_providers(has_claude, has_codex), indent=2),
+                json.dumps(get_default_config(has_claude, has_codex), indent=2),
                 encoding="utf-8",
             )
             print("Created planforge.json")
