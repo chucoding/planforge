@@ -206,11 +206,18 @@ export async function runInit(args: string[]): Promise<void> {
     }
 
     if (hasClaude && !finishedWithCodexOnly) {
-      try {
-        runCommand("claude", ["/init"], projectRoot);
-      } catch (err) {
-        console.warn("Warning: claude /init failed:", (err as Error).message);
-        console.log("  Run 'claude' to sign in.");
+      let runClaudeInit = false;
+      if (process.stdin.isTTY) {
+        const raw = await ask("Run claude /init for this project? (y/n)", "y");
+        runClaudeInit = /^y(es)?$/i.test(raw.trim());
+      }
+      if (runClaudeInit) {
+        try {
+          runCommand("claude", ["/init"], projectRoot);
+        } catch (err) {
+          console.warn("Warning: claude /init failed:", (err as Error).message);
+          console.log("  Run 'claude' to sign in.");
+        }
       }
     }
 

@@ -1,6 +1,7 @@
 """planforge init - detect providers, install slash commands, create .cursor/plans."""
 
 import json
+import sys
 from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_plans_dir
@@ -9,6 +10,14 @@ from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 from planforge.templates.install import install_templates
 from planforge.utils.config import get_default_config
+
+
+def _prompt_claude_init() -> bool:
+    """Ask user (y/n) whether to run claude /init. Returns True only for y/yes. Non-TTY → False."""
+    if not sys.stdin.isatty():
+        return False
+    raw = input("Run claude /init for this project? (y/n) [y]: ").strip().lower()
+    return raw in ("", "y", "yes")
 
 
 def run_init(args: list[str]) -> None:
@@ -26,7 +35,7 @@ def run_init(args: list[str]) -> None:
             print(f"  Codex CLI    {'installed' if has_codex else 'not found'}  (recommended for /i implementation)")
             print("")
 
-        if has_claude:
+        if has_claude and _prompt_claude_init():
             try:
                 run_command("claude", ["/init"], project_root)
             except Exception as e:
