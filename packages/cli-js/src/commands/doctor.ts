@@ -5,7 +5,7 @@
 import * as readline from "readline";
 import fs from "fs-extra";
 import { resolve } from "path";
-import { getProjectRoot, getPlansDir, getTemplatesRoot } from "../utils/paths.js";
+import { getProjectRoot, getPlansDir, getContextDir, getTemplatesRoot } from "../utils/paths.js";
 import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
 import { checkClaude, listModelsClaude, completeOneTurn as claudeCompleteOneTurn } from "../providers/claude.js";
@@ -84,18 +84,17 @@ export async function runDoctor(_args: string[]): Promise<void> {
 
   const hasPlansDir = await fs.pathExists(plansDir);
   checks.push({
-    name: ".cursor/plans",
+    name: ".planforge/plans",
     status: hasPlansDir ? "ok" : "error",
     message: hasPlansDir ? "exists" : "missing (run planforge init)",
   });
 
-  const contextDir = config?.contextDir ?? ".cursor/context";
-  const contextDirPath = resolve(projectRoot, contextDir);
+  const contextDirPath = getContextDir(projectRoot);
   const hasContextDir = await fs.pathExists(contextDirPath);
   checks.push({
-    name: "contextDir",
+    name: ".planforge/context",
     status: hasContextDir ? "ok" : "warn",
-    message: hasContextDir ? `${contextDir} exists` : `${contextDir} missing (run planforge init)`,
+    message: hasContextDir ? "exists" : "missing (run planforge init)",
   });
 
   console.log("\nPlanForge doctor");

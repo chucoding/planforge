@@ -1,5 +1,5 @@
 /**
- * planforge plan <goal> - generate .cursor/plans/<summary>-<hash>.plan.md via configured planner provider
+ * planforge plan <goal> - generate .planforge/plans/<summary>-<hash>.plan.md via configured planner provider
  */
 
 import fs from "fs-extra";
@@ -78,7 +78,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
   let context: string | undefined;
   try {
     context = await loadMergedContext(projectRoot, {
-      contextDir: opts?.contextDir ?? config.contextDir,
+      contextDir: opts?.contextDir ?? ".planforge/context",
       inlineContext: opts?.context,
     });
   } catch (err) {

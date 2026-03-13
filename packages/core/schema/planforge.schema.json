@@ -20,8 +20,6 @@
         "effort": { "type": "string", "enum": ["low", "medium", "high"] },
         "reasoning": { "type": "string", "enum": ["low", "high"] }
       }
-    },
-    "plansDir": { "type": "string", "default": ".cursor/plans" },
-    "contextDir": { "type": "string", "default": ".cursor/context" }
+    }
   }
 }

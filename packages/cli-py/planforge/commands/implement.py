@@ -122,7 +122,7 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
     try:
         context = load_merged_context(
             project_root,
-            context_dir=opts.get("context_dir") or config.get("contextDir"),
+            context_dir=opts.get("context_dir") or ".planforge/context",
             inline_context=opts.get("context"),
         )
     except OSError as e:

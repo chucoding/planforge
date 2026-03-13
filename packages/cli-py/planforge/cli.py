@@ -18,14 +18,14 @@ def main() -> None:
 @main.command()
 @click.option("--skip-provider-install", is_flag=True, help="Skip interactive provider (Claude/Codex) install prompt")
 def init(skip_provider_install: bool) -> None:
-    """Detect providers, run claude /init when available, install Cursor slash commands, create .cursor/plans and planforge.json."""
+    """Detect providers, run claude /init when available, install Cursor slash commands, create .planforge/plans and planforge.json."""
     run_init(["--skip-provider-install"] if skip_provider_install else [])
 
 
 @main.group(invoke_without_command=True)
 @click.pass_context
 def doctor(ctx: click.Context) -> None:
-    """Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .cursor/plans."""
+    """Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .planforge/plans."""
     if ctx.invoked_subcommand is None:
         run_doctor([])
 
@@ -53,16 +53,16 @@ def install(force: bool) -> None:
 
 @main.command("plan")
 @click.argument("goal", nargs=-1)
-@click.option("--context-dir", "context_dir", type=click.Path(), help="Path to markdown context directory (default: .cursor/context)")
+@click.option("--context-dir", "context_dir", type=click.Path(), help="Path to markdown context directory (default: .planforge/context)")
 @click.option("--context", help="Conversation context text to pass to the planner")
 def plan_cmd(goal: tuple[str, ...], context_dir: str | None, context: str | None) -> None:
-    """Generate a development plan and save to .cursor/plans (uses planner from planforge.json)."""
+    """Generate a development plan and save to .planforge/plans (uses planner from planforge.json)."""
     run_plan(list(goal), {"context_dir": context_dir, "context": context})
 
 
 @main.command("implement")
 @click.argument("prompt", nargs=-1)
-@click.option("--context-dir", "context_dir", type=click.Path(), help="Path to markdown context directory (default: .cursor/context)")
+@click.option("--context-dir", "context_dir", type=click.Path(), help="Path to markdown context directory (default: .planforge/context)")
 @click.option("--context", help="Conversation context text to pass to the implementer")
 @click.option("--plan-file", "plan_file", type=click.Path(), help="Path to plan file (default: index.json activePlan or latest .plan.md)")
 @click.option("--files", "files", multiple=True, type=click.Path(), help="File paths to focus on (overrides plan's Files Likely to Change)")
