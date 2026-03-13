@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 from planforge.utils.shell import has_command
@@ -95,6 +96,89 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
     return out
 
 
+def _run_codex_exec_streaming(
+    full_prompt: str, cwd: str, *, allow_plan_fallback: bool = False
+) -> str:
+    """Run codex exec with streaming: forward stdout/stderr to the current process so the user
+    sees logs in real time. Returns collected stdout when done. When allow_plan_fallback is True
+    (plan only), exit code 1 may still return stdout if it looks like a plan.
+    """
+    stdout_chunks: list[str] = []
+
+    def read_stdout(proc: subprocess.Popen) -> None:
+        if proc.stdout is None:
+            return
+        for line in iter(proc.stdout.readline, ""):
+            stdout_chunks.append(line)
+            sys.stdout.write(line)
+            sys.stdout.flush()
+
+    def read_stderr(proc: subprocess.Popen) -> None:
+        if proc.stderr is None:
+            return
+        for line in iter(proc.stderr.readline, ""):
+            sys.stderr.write(line)
+            sys.stderr.flush()
+
+    if os.name == "nt":
+        fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-")
+        try:
+            os.write(fd, full_prompt.encode("utf-8"))
+            os.close(fd)
+            escaped = temp_path.replace("'", "''")
+            script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | codex exec -"
+            proc = subprocess.Popen(
+                ["powershell", "-NoProfile", "-Command", script],
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
+    else:
+        proc = subprocess.Popen(
+            ["codex", "exec", full_prompt],
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        temp_path = None
+
+    t_out = threading.Thread(target=read_stdout, args=(proc,))
+    t_err = threading.Thread(target=read_stderr, args=(proc,))
+    t_out.daemon = True
+    t_err.daemon = True
+    t_out.start()
+    t_err.start()
+    proc.wait()
+
+    if temp_path is not None:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
+    t_out.join(timeout=1.0)
+    t_err.join(timeout=1.0)
+
+    out = "".join(stdout_chunks).strip()
+    if proc.returncode == 0:
+        return out
+    if allow_plan_fallback and proc.returncode == 1 and _looks_like_plan(out):
+        print(
+            "Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.",
+            file=sys.stderr,
+        )
+        return out
+    raise RuntimeError("Codex exited with code " + str(proc.returncode))
+
+
 def run_plan(goal: str, opts: dict | None = None) -> str:
     opts = opts or {}
     cwd = opts.get("cwd") or os.getcwd()
@@ -111,7 +195,7 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
     body += "\n\n---\n\n" + load_prompt(prompts_dir / "append-i18n.md") + "\n\n" + load_prompt(prompts_dir / "append-slug.md")
     full_prompt = body + "\n\n---\n\nUser goal: " + goal
     try:
-        return _run_codex_exec(full_prompt, cwd, allow_plan_fallback=True)
+        return _run_codex_exec_streaming(full_prompt, cwd, allow_plan_fallback=True)
     except Exception as e:
         raise RuntimeError("Codex plan failed: " + str(e)) from e
 

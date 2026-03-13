@@ -2,11 +2,61 @@
 
 import os
 import subprocess
+import sys
+import threading
 from pathlib import Path
 
 from planforge.utils.shell import has_command
 from planforge.utils.paths import get_prompts_dir
 from planforge.utils.prompt import load_prompt
+
+
+def _run_claude_streaming(full_prompt: str, cwd: str) -> str:
+    """Run Claude with streaming: forward stdout/stderr to the current process so the user
+    sees logs in real time. Returns collected stdout when done.
+    """
+    proc = subprocess.Popen(
+        ["claude"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=cwd,
+        text=True,
+    )
+    proc.stdin.write(full_prompt)
+    proc.stdin.close()
+
+    stdout_chunks: list[str] = []
+
+    def read_stdout() -> None:
+        if proc.stdout is None:
+            return
+        for line in iter(proc.stdout.readline, ""):
+            stdout_chunks.append(line)
+            sys.stdout.write(line)
+            sys.stdout.flush()
+
+    def read_stderr() -> None:
+        if proc.stderr is None:
+            return
+        for line in iter(proc.stderr.readline, ""):
+            sys.stderr.write(line)
+            sys.stderr.flush()
+
+    t_out = threading.Thread(target=read_stdout)
+    t_err = threading.Thread(target=read_stderr)
+    t_out.daemon = True
+    t_err.daemon = True
+    t_out.start()
+    t_err.start()
+    proc.wait()
+    t_out.join(timeout=1.0)
+    t_err.join(timeout=1.0)
+
+    out = "".join(stdout_chunks).strip()
+    if proc.returncode != 0:
+        raise RuntimeError("Claude exited with code " + str(proc.returncode))
+    return out
 
 
 def check_claude() -> bool:
@@ -53,18 +103,10 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     body += "\n\n---\n\n" + load_prompt(prompts_dir / "append-i18n.md") + "\n\n" + load_prompt(prompts_dir / "append-slug.md")
     full_prompt = body + "\n\n---\n\nUser goal: " + goal
-    result = subprocess.run(
-        ["claude"],
-        input=full_prompt,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    if result.returncode != 0:
-        msg = result.stderr or result.stdout or "Claude exited non-zero"
-        raise RuntimeError("Claude plan failed: " + msg)
-    return (result.stdout or "").strip()
+    try:
+        return _run_claude_streaming(full_prompt, cwd)
+    except Exception as e:
+        raise RuntimeError("Claude plan failed: " + str(e)) from e
 
 
 def run_implement(prompt: str, opts: dict | None = None) -> str:

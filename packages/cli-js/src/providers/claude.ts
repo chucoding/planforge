@@ -2,7 +2,7 @@
  * Claude provider - planning (e.g. /p)
  */
 
-import { execSync, spawn, spawnSync } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { readFile } from "fs/promises";
 import { resolve } from "path";
 import { hasCommand } from "../utils/shell.js";
@@ -91,13 +91,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
 
   try {
-    const out = execSync("claude", {
-      encoding: "utf-8",
-      input: fullPrompt,
-      cwd,
-      maxBuffer: 1024 * 1024,
-    });
-    return typeof out === "string" ? out.trim() : String(out).trim();
+    return await runClaudeStreaming(fullPrompt, cwd);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
