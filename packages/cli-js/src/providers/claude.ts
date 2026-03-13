@@ -88,6 +88,10 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
     if (opts?.context?.trim()) {
       body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
+    body +=
+      "\n\n---\n\nWrite the entire plan (all section headings and body) in the same language as the user's goal.";
+    body +=
+      '\n\nAt the very end of the plan, add exactly one line: "Filename slug: <slug>" where <slug> is 2–3 English words in lowercase with hyphens (e.g. add-login-page, implement-i18n). Use at most 2 hyphens. This is used for the plan file name.';
     fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
   } catch {
     let fallback = "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist.";
@@ -100,6 +104,10 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
     if (opts?.context?.trim()) {
       fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
+    fallback +=
+      "\n\n---\n\nWrite the entire plan (all section headings and body) in the same language as the user's goal.";
+    fallback +=
+      '\n\nAt the very end of the plan, add exactly one line: "Filename slug: <slug>" where <slug> is 2–3 English words in lowercase with hyphens (e.g. add-login-page, implement-i18n). Use at most 2 hyphens. This is used for the plan file name.';
     fullPrompt = fallback + "\n\n---\n\nUser goal: " + goal;
   }
 
@@ -156,6 +164,8 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     if (opts?.codeContext?.trim()) {
       body += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
     }
+    body +=
+      "\n\n---\n\nWrite any explanatory text or comments you add in the same language as the user's request.";
     fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
   } catch {
     let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
@@ -177,6 +187,8 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     if (opts?.codeContext?.trim()) {
       fallback += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
     }
+    fallback +=
+      "\n\n---\n\nWrite any explanatory text or comments you add in the same language as the user's request.";
     fullPrompt = fallback + "\n\n---\n\nUser request: " + prompt;
   }
 

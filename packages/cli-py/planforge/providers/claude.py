@@ -65,6 +65,8 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
         body += "\n\n---\n\nRepository context:\n" + (opts["repoContext"] or "").strip()
     if (opts.get("context") or "").strip():
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
+    body += "\n\n---\n\nWrite the entire plan (all section headings and body) in the same language as the user's goal."
+    body += '\n\nAt the very end of the plan, add exactly one line: "Filename slug: <slug>" where <slug> is 2–3 English words in lowercase with hyphens (e.g. add-login-page, implement-i18n). Use at most 2 hyphens. This is used for the plan file name.'
     full_prompt = body + "\n\n---\n\nUser goal: " + goal
     result = subprocess.run(
         ["claude"],
@@ -103,6 +105,7 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
         body += "\n\n---\n\nRecent commit (per file):\n" + (opts["recentCommitsPerFile"] or "").strip()
     if (opts.get("codeContext") or "").strip():
         body += "\n\n---\n\nRelevant file contents:\n" + (opts["codeContext"] or "").strip()
+    body += "\n\n---\n\nWrite any explanatory text or comments you add in the same language as the user's request."
     full_prompt = body + "\n\n---\n\nUser request: " + prompt
     result = subprocess.run(
         ["claude"],

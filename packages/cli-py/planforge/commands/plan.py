@@ -55,6 +55,35 @@ def _extract_title_from_plan_body(plan_body: str) -> str:
     return ""
 
 
+# Pattern for "Filename slug: <slug>" at end of plan. Slug: 1–3 segments, lowercase alphanumeric + hyphens, max 2 hyphens.
+_FILENAME_SLUG_RE = re.compile(r"Filename slug:\s*([a-z0-9]+(?:-[a-z0-9]+){0,2})\s*$", re.IGNORECASE | re.MULTILINE)
+
+
+def _parse_slug_from_plan_body(plan_body: str) -> str | None:
+    """Parse slug from plan body if present and valid (ASCII, max 2 hyphens). Returns None if missing or invalid."""
+    m = _FILENAME_SLUG_RE.search(plan_body)
+    if not m:
+        return None
+    slug = m.group(1).strip().lower()
+    if not slug or slug.count("-") > 2:
+        return None
+    if not re.match(r"^[a-z0-9-]+$", slug):
+        return None
+    return slug if _is_slug_valid(slug) else None
+
+
+def _strip_filename_slug_line(plan_body: str) -> str:
+    """Remove the 'Filename slug: ...' line from plan body so it is not shown in the saved file."""
+    lines = [line for line in plan_body.splitlines() if not re.match(r"^\s*Filename slug:\s*.+$", line, re.IGNORECASE)]
+    return "\n".join(lines).rstrip()
+
+
+def _limit_slug_hyphens(slug: str) -> str:
+    """Limit slug to at most 2 hyphens by taking first 3 segments."""
+    parts = slug.split("-")
+    return slug if len(parts) <= 3 else "-".join(parts[:3])
+
+
 def _get_planner_runner(provider: str):
     if provider == "claude":
         return (check_claude, claude_run_plan)
@@ -103,20 +132,17 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
     except Exception as e:
         print("Plan generation failed:", e, file=__import__("sys").stderr)
         raise SystemExit(1)
-    ascii_slug = config.get("planner", {}).get("asciiSlug") or (
-        __import__("os").environ.get("PLANFORGE_ASCII_SLUG") == "1"
-    )
-    slug = _slugify_ascii(goal) if ascii_slug else _slugify_for_filename(goal)
-    if not _is_slug_valid(slug):
-        slug = _slugify_ascii(goal) or _slugify_for_filename(goal)
-    if not _is_slug_valid(slug):
-        title = _extract_title_from_plan_body(plan_body)
-        if title:
-            slug = _slugify_ascii(title) if ascii_slug else _slugify_for_filename(title)
-            if not _is_slug_valid(slug):
+    body_to_write = _strip_filename_slug_line(plan_body)
+    slug = _parse_slug_from_plan_body(plan_body)
+    if not slug:
+        slug = _slugify_ascii(goal)
+        if not _is_slug_valid(slug):
+            title = _extract_title_from_plan_body(plan_body)
+            if title:
                 slug = _slugify_ascii(title)
-    if not _is_slug_valid(slug):
-        slug = "plan"
+        if not _is_slug_valid(slug):
+            slug = "plan"
+        slug = _limit_slug_hyphens(slug)
     h = _short_hash()
     now = datetime.now()
     plans_dir = Path(get_plans_dir(project_root))
@@ -124,7 +150,7 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
     dated_plans_dir.mkdir(parents=True, exist_ok=True)
     _, mmdd = get_date_parts(now)
     file_path = dated_plans_dir / f"{mmdd}-{slug}-{h}.plan.md"
-    file_path.write_text(plan_body, encoding="utf-8")
+    file_path.write_text(body_to_write, encoding="utf-8")
     (plans_dir / "index.json").write_text(
         json.dumps({"activePlan": file_path.relative_to(plans_dir).as_posix()}, indent=2),
         encoding="utf-8",

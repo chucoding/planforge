@@ -60,6 +60,33 @@ function extractTitleFromPlanBody(planBody: string): string {
   return (match ? match[1].trim() : line).slice(0, 80);
 }
 
+/** Pattern for "Filename slug: <slug>" at end of plan. Slug: 1–3 segments, lowercase alphanumeric + hyphens, max 2 hyphens. */
+const FILENAME_SLUG_RE = /Filename slug:\s*([a-z0-9]+(?:-[a-z0-9]+){0,2})\s*$/im;
+
+/** Parse slug from plan body if present and valid (ASCII, max 2 hyphens). Returns null if missing or invalid. */
+function parseSlugFromPlanBody(planBody: string): string | null {
+  const m = planBody.match(FILENAME_SLUG_RE);
+  if (!m) return null;
+  const slug = m[1].trim().toLowerCase();
+  if (!slug || (slug.match(/-/g)?.length ?? 0) > 2) return null;
+  if (!/^[a-z0-9-]+$/.test(slug)) return null;
+  return isSlugValid(slug) ? slug : null;
+}
+
+/** Remove the "Filename slug: ..." line from plan body so it is not shown in the saved file. */
+function stripFilenameSlugLine(planBody: string): string {
+  const lines = planBody.split(/\r?\n/);
+  const filtered = lines.filter((line) => !/^\s*Filename slug:\s*.+$/i.test(line.trim()));
+  return filtered.join("\n").trimEnd();
+}
+
+/** Limit slug to at most 2 hyphens by taking first 3 segments. */
+function limitSlugHyphens(slug: string): string {
+  const parts = slug.split("-");
+  if (parts.length <= 3) return slug;
+  return parts.slice(0, 3).join("-");
+}
+
 export interface PlanCliOpts {
   contextDir?: string;
   context?: string;
@@ -111,31 +138,34 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       projectContext,
       projectContextSource,
     });
-    const asciiOnly = config.planner.asciiSlug ?? process.env.PLANFORGE_ASCII_SLUG === "1";
-    let slug = asciiOnly ? slugifyAscii(goal) : slugifyForFilename(goal);
-    if (!isSlugValid(slug)) {
-      try {
-        const romanized = romanize(goal);
-        slug = slugifyAscii(romanized);
-      } catch {
-        /* ignore romanization errors */
+    const bodyToWrite = stripFilenameSlugLine(planBody);
+    let slug = parseSlugFromPlanBody(planBody);
+    if (!slug) {
+      slug = slugifyAscii(goal);
+      if (!isSlugValid(slug)) {
+        try {
+          slug = slugifyAscii(romanize(goal));
+        } catch {
+          /* ignore romanization errors */
+        }
       }
-    }
-    if (!isSlugValid(slug)) {
-      const title = extractTitleFromPlanBody(planBody);
-      if (title) {
-        slug = asciiOnly ? slugifyAscii(title) : slugifyForFilename(title);
-        if (!isSlugValid(slug)) {
-          try {
-            slug = slugifyAscii(romanize(title));
-          } catch {
-            /* ignore */
+      if (!isSlugValid(slug)) {
+        const title = extractTitleFromPlanBody(planBody);
+        if (title) {
+          slug = slugifyAscii(title);
+          if (!isSlugValid(slug)) {
+            try {
+              slug = slugifyAscii(romanize(title));
+            } catch {
+              /* ignore */
+            }
           }
         }
       }
-    }
-    if (!isSlugValid(slug)) {
-      slug = "plan";
+      if (!isSlugValid(slug)) {
+        slug = "plan";
+      }
+      slug = limitSlugHyphens(slug);
     }
     const hash = shortHash();
     const now = new Date();
@@ -144,7 +174,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
     await fs.ensureDir(datedPlansDir);
     const filename = `${getDateParts(now).mmdd}-${slug}-${hash}.plan.md`;
     const filePath = resolve(datedPlansDir, filename);
-    await fs.writeFile(filePath, planBody, "utf-8");
+    await fs.writeFile(filePath, bodyToWrite, "utf-8");
     await fs.writeJson(
       resolve(plansDir, "index.json"),
       { activePlan: relative(plansDir, filePath).replace(/\\/g, "/") },
