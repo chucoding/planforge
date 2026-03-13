@@ -27,6 +27,7 @@
     "prepublishOnly": "pnpm run build"
   },
   "dependencies": {
+    "@planforge/core": "file:../core",
     "@daun_jung/korean-romanizer": "^1.0.1",
     "commander": "^12.0.0",
     "fs-extra": "^11.2.0"
