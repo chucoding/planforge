@@ -10,6 +10,7 @@ import { runInstall } from "./commands/install.js";
 import { runPlan } from "./commands/plan.js";
 import { runImplement } from "./commands/implement.js";
 import { runConfigShow, runConfigSuggest } from "./commands/config.js";
+import { runModel } from "./commands/model.js";
 
 const program = new Command();
 
@@ -50,6 +51,13 @@ program
   .option("-f, --force", "Overwrite existing planforge.json")
   .action(async (opts: { force?: boolean }) => {
     await runInstall(opts.force ? ["--force"] : []);
+  });
+
+program
+  .command("model")
+  .description("Interactive model selection: mode => provider => model (with effort/reasoning). Updates planforge.json.")
+  .action(async () => {
+    await runModel([]);
   });
 
 program

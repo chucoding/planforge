@@ -7,6 +7,7 @@ from planforge.commands.doctor import run_doctor
 from planforge.commands.install import run_install
 from planforge.commands.plan import run_plan
 from planforge.commands.implement import run_implement
+from planforge.commands.model import run_model
 
 
 @click.group()
@@ -49,6 +50,12 @@ def doctor_ai(provider: str | None, model: str | None) -> None:
 def install(force: bool) -> None:
     """Install Cursor slash commands and templates to .cursor/skills and .cursor/rules."""
     run_install(["--force"] if force else [])
+
+
+@main.command("model")
+def model_cmd() -> None:
+    """Interactive model selection: mode => provider => model (with effort/reasoning). Updates planforge.json."""
+    run_model([])
 
 
 @main.command("plan")

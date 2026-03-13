@@ -75,3 +75,12 @@ export function getPromptsDir(): string {
   const coreRoot = dirname(corePackageJson);
   return resolve(coreRoot, "prompts");
 }
+
+/**
+ * Resolve models.json path from @planforge/core package (for planforge model command).
+ */
+export function getModelsJsonPath(): string {
+  const corePackageJson = require.resolve("@planforge/core/package.json");
+  const coreRoot = dirname(corePackageJson);
+  return resolve(coreRoot, "models.json");
+}
