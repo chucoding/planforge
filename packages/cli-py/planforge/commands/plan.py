@@ -1,10 +1,12 @@
-"""planforge plan <goal> - generate .planforge/plans/<summary>-<hash>.plan.md via configured planner."""
+"""planforge plan <goal> - generate dated .plan.md files via configured planner."""
 
+import json
 import re
 import secrets
+from datetime import datetime
 from pathlib import Path
 
-from planforge.utils.paths import get_project_root, get_plans_dir
+from planforge.utils.paths import get_project_root, get_plans_dir, get_dated_plans_dir, get_date_parts
 from planforge.utils.config import load_config
 from planforge.utils.context import load_merged_context
 from planforge.utils.repo_context import get_repo_context
@@ -73,7 +75,7 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
     try:
         context = load_merged_context(
             project_root,
-            context_dir=opts.get("context_dir") or ".planforge/context",
+            context_dir=opts.get("context_dir"),
             inline_context=opts.get("context"),
         )
     except OSError as e:
@@ -116,8 +118,15 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
     if not _is_slug_valid(slug):
         slug = "plan"
     h = _short_hash()
+    now = datetime.now()
     plans_dir = Path(get_plans_dir(project_root))
-    plans_dir.mkdir(parents=True, exist_ok=True)
-    file_path = plans_dir / f"{slug}-{h}.plan.md"
+    dated_plans_dir = Path(get_dated_plans_dir(project_root, now))
+    dated_plans_dir.mkdir(parents=True, exist_ok=True)
+    _, mmdd = get_date_parts(now)
+    file_path = dated_plans_dir / f"{mmdd}-{slug}-{h}.plan.md"
     file_path.write_text(plan_body, encoding="utf-8")
+    (plans_dir / "index.json").write_text(
+        json.dumps({"activePlan": file_path.relative_to(plans_dir).as_posix()}, indent=2),
+        encoding="utf-8",
+    )
     print("Created:", file_path)

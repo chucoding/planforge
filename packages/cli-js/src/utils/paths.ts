@@ -1,5 +1,5 @@
 /**
- * Path resolution for PlanForge (project root, .planforge plans/context dirs)
+ * Path resolution for PlanForge (project root, .planforge plans/contexts dirs)
  */
 
 import { existsSync } from "fs";
@@ -27,8 +27,35 @@ export function getPlansDir(projectRoot: string): string {
   return resolve(projectRoot, ".planforge", "plans");
 }
 
-export function getContextDir(projectRoot: string): string {
+export function getContextsDir(projectRoot: string): string {
+  return resolve(projectRoot, ".planforge", "contexts");
+}
+
+/** Legacy path; used by doctor for migration warning only. TODO: 06-13에 제거 */
+export function getLegacyContextDir(projectRoot: string): string {
   return resolve(projectRoot, ".planforge", "context");
+}
+
+export function getContextDir(projectRoot: string): string {
+  return getContextsDir(projectRoot);
+}
+
+export function getDefaultContextDirs(projectRoot: string): string[] {
+  return [getContextsDir(projectRoot)];
+}
+
+export function getDateParts(date: Date = new Date()): { yyyyMmDd: string; mmdd: string } {
+  const year = String(date.getFullYear());
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return {
+    yyyyMmDd: `${year}-${month}-${day}`,
+    mmdd: `${month}${day}`,
+  };
+}
+
+export function getDatedPlansDir(projectRoot: string, date: Date = new Date()): string {
+  return resolve(getPlansDir(projectRoot), getDateParts(date).yyyyMmDd);
 }
 
 /**

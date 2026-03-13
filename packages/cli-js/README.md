@@ -24,19 +24,19 @@ planforge init
 
 Then use `/p` for planning and `/i` for implementation in Cursor, or run:
 
-- `planforge plan "<goal>"` — generate a plan
-- `planforge implement "<prompt>"` — run implementation
+- `planforge plan "<goal>"` to generate a dated plan file under `.planforge/plans/YYYY-MM-DD/`
+- `planforge implement "<prompt>"` to run implementation
 
 ## Commands
 
 | Command | Description |
 | ------- | ----------- |
-| `planforge init` | Shows provider check (Claude/Codex) first; detects providers, runs `claude /init` when Claude is available, creates `AGENTS.md` when Codex is available, creates `planforge.json`, and installs Cursor skills/rules. Use `--skip-provider-install` to skip provider prompt. |
-| `planforge plan "<goal>"` | Generate a plan and save to `.planforge/plans/`. Claude prefers `CLAUDE.md`; Codex prefers `AGENTS.md`. |
-| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`, with the same provider-specific instruction file preference. |
+| `planforge init` | Shows provider check (Claude/Codex) first; detects providers, runs `claude /init` when available, creates `AGENTS.md` when Codex is available, creates `planforge.json`, `.planforge/plans`, `.planforge/contexts`, and installs Cursor skills/rules. Use `--skip-provider-install` to skip provider prompt. |
+| `planforge plan "<goal>"` | Generate a plan and save to `.planforge/plans/YYYY-MM-DD/MMDD-<summary>-<hash>.plan.md`. Claude prefers `CLAUDE.md`; Codex prefers `AGENTS.md`. |
+| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`, with the same provider-specific instruction file preference and default context loading from `.planforge/contexts` (fallback: `.planforge/context`). |
 | `planforge config show` | Print current `planforge.json`. |
 | `planforge config suggest [--apply]` | Show or apply suggested config for installed providers. |
-| `planforge doctor` | Check Claude/Codex CLI, provider instruction files, config, and `.planforge/plans`. |
+| `planforge doctor` | Check Claude/Codex CLI, provider instruction files, config, `.planforge/plans`, and `.planforge/contexts`. |
 | `planforge install [-f]` | Install `.cursor/skills` and `.cursor/rules`; `-f` overwrites existing `planforge.json`. |
 
 ## License

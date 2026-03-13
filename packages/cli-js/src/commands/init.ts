@@ -1,5 +1,5 @@
 /**
- * planforge init - detect providers, install slash commands, create .cursor/plans
+ * planforge init - detect providers, install slash commands, create .planforge paths
  */
 
 import * as readline from "readline";
@@ -266,7 +266,7 @@ export async function runInit(args: string[]): Promise<void> {
       console.log("");
     }
     console.log("  Created .planforge/plans");
-    console.log("  Created .planforge/context");
+    console.log("  Created .planforge/contexts");
     if (createdConfig) {
       console.log("  Created planforge.json");
     } else if (updatedConfig) {

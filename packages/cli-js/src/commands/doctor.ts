@@ -5,7 +5,13 @@
 import * as readline from "readline";
 import fs from "fs-extra";
 import { resolve } from "path";
-import { getProjectRoot, getPlansDir, getContextDir, getTemplatesRoot } from "../utils/paths.js";
+import {
+  getProjectRoot,
+  getPlansDir,
+  getContextDir,
+  getLegacyContextDir,
+  getTemplatesRoot,
+} from "../utils/paths.js";
 import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
 import { checkClaude, listModelsClaude, completeOneTurn as claudeCompleteOneTurn } from "../providers/claude.js";
@@ -28,6 +34,14 @@ function statusSymbol(s: Status): string {
     case "error":
       return "[ERROR]";
   }
+}
+
+function isDateDirName(name: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(name);
+}
+
+function isDatedPlanFileName(name: string): boolean {
+  return /^\d{4}-.+\.plan\.md$/.test(name);
 }
 
 export async function runDoctor(_args: string[]): Promise<void> {
@@ -92,10 +106,57 @@ export async function runDoctor(_args: string[]): Promise<void> {
   const contextDirPath = getContextDir(projectRoot);
   const hasContextDir = await fs.pathExists(contextDirPath);
   checks.push({
-    name: ".planforge/context",
+    name: ".planforge/contexts",
     status: hasContextDir ? "ok" : "warn",
     message: hasContextDir ? "exists" : "missing (run planforge init)",
   });
+
+  // TODO: 06-13에 제거 (레거시 경로/플랫 플랜 경고 블록)
+  const legacyContextDir = getLegacyContextDir(projectRoot);
+  if (await fs.pathExists(legacyContextDir)) {
+    checks.push({
+      name: ".planforge/context",
+      status: "warn",
+      message: "legacy path detected (migrate to .planforge/contexts)",
+    });
+  }
+  // TODO: 06-13에 제거 (위 레거시 블록과 함께)
+  if (hasPlansDir) {
+    const entries = await fs.readdir(plansDir, { withFileTypes: true });
+    const hasLegacyFlatPlans = entries.some((entry) => entry.isFile() && entry.name.endsWith(".plan.md"));
+    if (hasLegacyFlatPlans) {
+      checks.push({
+        name: "plans layout",
+        status: "warn",
+        message: "legacy flat plan files detected (use YYYY-MM-DD/MMDD-... .plan.md)",
+      });
+    }
+
+    const invalidPlanDirs = entries
+      .filter((entry) => entry.isDirectory() && !isDateDirName(entry.name))
+      .map((entry) => entry.name);
+    if (invalidPlanDirs.length > 0) {
+      checks.push({
+        name: "plans layout",
+        status: "warn",
+        message: `unexpected plan subdirs: ${invalidPlanDirs.join(", ")}`,
+      });
+    }
+
+    for (const entry of entries.filter((item) => item.isDirectory() && isDateDirName(item.name))) {
+      const datedEntries = await fs.readdir(resolve(plansDir, entry.name), { withFileTypes: true });
+      const invalidFiles = datedEntries
+        .filter((item) => item.isFile() && item.name.endsWith(".plan.md") && !isDatedPlanFileName(item.name))
+        .map((item) => item.name);
+      if (invalidFiles.length > 0) {
+        checks.push({
+          name: `plans/${entry.name}`,
+          status: "warn",
+          message: `unexpected filenames: ${invalidFiles.join(", ")}`,
+        });
+      }
+    }
+  }
 
   console.log("\nPlanForge doctor");
   console.log("  ------------------------------");
@@ -163,10 +224,10 @@ function buildModelListFromConfig(config: PlanForgeConfig, hasClaude: boolean, h
 
 function ask(question: string): Promise<string> {
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
+  return new Promise((resolveAnswer) => {
     rl.question(question, (answer) => {
       rl.close();
-      resolve((answer ?? "").trim());
+      resolveAnswer((answer ?? "").trim());
     });
   });
 }
@@ -191,7 +252,6 @@ export async function runDoctorAi(args: string[]): Promise<void> {
   if (claudeModels !== null || codexModels !== null) {
     options = [];
     if (claudeModels !== null && hasClaude) {
-      const recommendedKey = config.planner.provider + "|" + config.planner.model;
       for (const model of claudeModels) {
         options.push({
           provider: "claude",
@@ -230,7 +290,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     }
     selected = match;
   } else if (process.stdin.isTTY) {
-    console.log("\nPlanForge doctor ai – select AI to run workflow tests\n");
+    console.log("\nPlanForge doctor ai - select AI to run workflow tests\n");
     options.forEach((o, i) => {
       const rec = o.recommended ? "  (recommended)" : "";
       console.log(`  ${i + 1}. ${o.provider} (${o.model})${rec}`);

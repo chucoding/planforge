@@ -1,6 +1,7 @@
-"""Path resolution for PlanForge (project root, .planforge plans/context dirs)."""
+"""Path resolution for PlanForge (project root, .planforge plans/contexts dirs)."""
 
 import os
+from datetime import datetime
 from pathlib import Path
 
 
@@ -25,12 +26,34 @@ def get_plans_dir(project_root: str) -> str:
     return str(Path(project_root) / ".planforge" / "plans")
 
 
-def get_context_dir(project_root: str) -> str:
+def get_contexts_dir(project_root: str) -> str:
+    return str(Path(project_root) / ".planforge" / "contexts")
+
+
+def get_legacy_context_dir(project_root: str) -> str:
+    """Legacy path; used by doctor for migration warning only. TODO: 06-13에 제거."""
     return str(Path(project_root) / ".planforge" / "context")
+
+
+def get_context_dir(project_root: str) -> str:
+    return get_contexts_dir(project_root)
+
+
+def get_default_context_dirs(project_root: str) -> list[str]:
+    return [get_contexts_dir(project_root)]
+
+
+def get_date_parts(date: datetime | None = None) -> tuple[str, str]:
+    now = date or datetime.now()
+    return now.strftime("%Y-%m-%d"), now.strftime("%m%d")
+
+
+def get_dated_plans_dir(project_root: str, date: datetime | None = None) -> str:
+    yyyy_mm_dd, _ = get_date_parts(date)
+    return str(Path(get_plans_dir(project_root)) / yyyy_mm_dd)
 
 
 def get_templates_root() -> str:
     """Resolve repo templates dir (monorepo: packages/cli-py/planforge/utils -> repo/templates)."""
-    # From planforge/utils/paths.py: utils -> planforge -> cli-py -> packages -> root
     base = Path(__file__).resolve().parent.parent.parent.parent.parent
     return str(base / "templates")
