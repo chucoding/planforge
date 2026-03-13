@@ -1,4 +1,4 @@
-"""planforge init - detect providers, install slash commands, create .planforge/plans."""
+"""planforge init - detect providers, install slash commands, create .planforge paths."""
 
 import json
 import sys
@@ -48,7 +48,7 @@ def run_init(args: list[str]) -> None:
         Path(plans_dir).mkdir(parents=True, exist_ok=True)
         print("Created .planforge/plans")
         Path(get_context_dir(project_root)).mkdir(parents=True, exist_ok=True)
-        print("Created .planforge/context")
+        print("Created .planforge/contexts")
 
         config_path = Path(project_root) / "planforge.json"
         if not config_path.exists():

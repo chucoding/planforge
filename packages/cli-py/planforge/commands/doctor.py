@@ -4,7 +4,13 @@ import json
 import sys
 from pathlib import Path
 
-from planforge.utils.paths import get_project_root, get_plans_dir, get_context_dir, get_templates_root
+from planforge.utils.paths import (
+    get_project_root,
+    get_plans_dir,
+    get_context_dir,
+    get_legacy_context_dir,
+    get_templates_root,
+)
 from planforge.utils.config import load_config
 from planforge.providers.claude import check_claude, complete_one_turn as claude_complete_one_turn
 from planforge.providers.codex import check_codex, complete_one_turn as codex_complete_one_turn
@@ -18,6 +24,14 @@ def _status_symbol(status: str) -> str:
     return "[ERROR]"
 
 
+def _is_date_dir_name(name: str) -> bool:
+    return len(name) == 10 and name[4] == "-" and name[7] == "-" and name.replace("-", "").isdigit()
+
+
+def _is_dated_plan_file_name(name: str) -> bool:
+    return name.endswith(".plan.md") and len(name) >= len("0000-x.plan.md") and name[:4].isdigit() and name[4] == "-"
+
+
 def run_doctor(args: list[str]) -> None:
     del args
     project_root = get_project_root()
@@ -25,13 +39,13 @@ def run_doctor(args: list[str]) -> None:
 
     config_path = Path(project_root) / "planforge.json"
     has_config_file = config_path.exists()
-    config: dict | None = None
     config_load_error: str | None = None
     if has_config_file:
         try:
             data = json.loads(config_path.read_text(encoding="utf-8"))
-            config = data if isinstance(data, dict) else {}
-        except (json.JSONDecodeError, OSError) as e:
+            if not isinstance(data, dict):
+                raise ValueError("top-level JSON must be an object")
+        except (ValueError, json.JSONDecodeError, OSError) as e:
             config_load_error = str(e)
 
     has_claude = check_claude()
@@ -78,10 +92,54 @@ def run_doctor(args: list[str]) -> None:
     context_dir_path = Path(get_context_dir(project_root))
     has_context_dir = context_dir_path.exists()
     checks.append((
-        ".planforge/context",
+        ".planforge/contexts",
         "ok" if has_context_dir else "warn",
         "exists" if has_context_dir else "missing (run planforge init)",
     ))
+
+    # TODO: 06-13에 제거 (레거시 경로/플랫 플랜 경고 블록)
+    legacy_context_dir = Path(get_legacy_context_dir(project_root))
+    if legacy_context_dir.exists():
+        checks.append((
+            ".planforge/context",
+            "warn",
+            "legacy path detected (migrate to .planforge/contexts)",
+        ))
+
+    # TODO: 06-13에 제거 (위 레거시 블록과 함께)
+    if has_plans_dir:
+        plan_root = Path(plans_dir)
+        root_entries = list(plan_root.iterdir())
+        has_legacy_flat_plans = any(entry.is_file() and entry.name.endswith(".plan.md") for entry in root_entries)
+        if has_legacy_flat_plans:
+            checks.append((
+                "plans layout",
+                "warn",
+                "legacy flat plan files detected (use YYYY-MM-DD/MMDD-... .plan.md)",
+            ))
+
+        invalid_plan_dirs = [entry.name for entry in root_entries if entry.is_dir() and not _is_date_dir_name(entry.name)]
+        if invalid_plan_dirs:
+            checks.append((
+                "plans layout",
+                "warn",
+                "unexpected plan subdirs: " + ", ".join(invalid_plan_dirs),
+            ))
+
+        for entry in root_entries:
+            if not entry.is_dir() or not _is_date_dir_name(entry.name):
+                continue
+            invalid_files = [
+                item.name
+                for item in entry.iterdir()
+                if item.is_file() and item.name.endswith(".plan.md") and not _is_dated_plan_file_name(item.name)
+            ]
+            if invalid_files:
+                checks.append((
+                    f"plans/{entry.name}",
+                    "warn",
+                    "unexpected filenames: " + ", ".join(invalid_files),
+                ))
 
     print("\nPlanForge doctor")
     print("  ------------------------------\n")
@@ -161,7 +219,7 @@ def run_doctor_ai(args: list[str]) -> None:
             raise SystemExit(1)
         selected = (match[0], match[1])
     elif sys.stdin.isatty():
-        print("\nPlanForge doctor ai – select AI to run workflow tests\n")
+        print("\nPlanForge doctor ai - select AI to run workflow tests\n")
         for i, (prov, model, rec) in enumerate(options, 1):
             rec_str = "  (recommended)" if rec else ""
             print(f"  {i}. {prov} ({model}){rec_str}")
@@ -203,15 +261,9 @@ def run_doctor_ai(args: list[str]) -> None:
         tc1_msg = prompts_data.get("tc1PlanRequest")
         tc2_msg = prompts_data.get("tc2ImplementRequest")
         tc3_msg = prompts_data.get("tc3SlashPWithImplementationStyleContent")
-        if (
-            not isinstance(tc1_msg, str)
-            or not isinstance(tc2_msg, str)
-            or not isinstance(tc3_msg, str)
-        ):
-            raise RuntimeError(
-                f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
-            )
-    except (json.JSONDecodeError, OSError) as e:
+        if not isinstance(tc1_msg, str) or not isinstance(tc2_msg, str) or not isinstance(tc3_msg, str):
+            raise RuntimeError("invalid prompts.json")
+    except (RuntimeError, json.JSONDecodeError, OSError) as e:
         raise RuntimeError(
             f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
         ) from e
@@ -220,29 +272,17 @@ def run_doctor_ai(args: list[str]) -> None:
     tc2_pass = False
     tc3_pass = False
     try:
-        tc1_response = complete_one_turn(
-            system_prompt,
-            tc1_msg,
-            **opts,
-        )
+        tc1_response = complete_one_turn(system_prompt, tc1_msg, **opts)
         tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
     except Exception as e:
         print("TC1 (plan request) error:", e, file=sys.stderr)
     try:
-        tc2_response = complete_one_turn(
-            system_prompt,
-            tc2_msg,
-            **opts,
-        )
+        tc2_response = complete_one_turn(system_prompt, tc2_msg, **opts)
         tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
     except Exception as e:
         print("TC2 (implement request) error:", e, file=sys.stderr)
     try:
-        tc3_response = complete_one_turn(
-            system_prompt,
-            tc3_msg,
-            **opts,
-        )
+        tc3_response = complete_one_turn(system_prompt, tc3_msg, **opts)
         tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
     except Exception as e:
         print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)

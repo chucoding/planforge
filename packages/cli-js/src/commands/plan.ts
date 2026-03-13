@@ -1,13 +1,13 @@
 /**
- * planforge plan <goal> - generate .planforge/plans/<summary>-<hash>.plan.md via configured planner provider
+ * planforge plan <goal> - generate dated .plan.md files via configured planner provider
  */
 
 import fs from "fs-extra";
-import { resolve } from "path";
+import { relative, resolve } from "path";
 import { randomBytes } from "crypto";
 import { spawnSync } from "child_process";
 import { romanize } from "@daun_jung/korean-romanizer";
-import { getProjectRoot, getPlansDir } from "../utils/paths.js";
+import { getProjectRoot, getPlansDir, getDatedPlansDir, getDateParts } from "../utils/paths.js";
 import { getRepoContext } from "../utils/repo-context.js";
 import { getProjectContext } from "../utils/project-context.js";
 import { loadMergedContext } from "../utils/context.js";
@@ -78,7 +78,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
   let context: string | undefined;
   try {
     context = await loadMergedContext(projectRoot, {
-      contextDir: opts?.contextDir ?? ".planforge/context",
+      contextDir: opts?.contextDir,
       inlineContext: opts?.context,
     });
   } catch (err) {
@@ -138,11 +138,18 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       slug = "plan";
     }
     const hash = shortHash();
+    const now = new Date();
     const plansDir = getPlansDir(projectRoot);
-    await fs.ensureDir(plansDir);
-    const filename = `${slug}-${hash}.plan.md`;
-    const filePath = resolve(plansDir, filename);
+    const datedPlansDir = getDatedPlansDir(projectRoot, now);
+    await fs.ensureDir(datedPlansDir);
+    const filename = `${getDateParts(now).mmdd}-${slug}-${hash}.plan.md`;
+    const filePath = resolve(datedPlansDir, filename);
     await fs.writeFile(filePath, planBody, "utf-8");
+    await fs.writeJson(
+      resolve(plansDir, "index.json"),
+      { activePlan: relative(plansDir, filePath).replace(/\\/g, "/") },
+      { spaces: 2 }
+    );
     console.log("Created:", filePath);
     // Open the plan file in Cursor for review (user can then run /i when ready)
     try {

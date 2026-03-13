@@ -8,6 +8,42 @@ import { getPlansDir } from "./paths.js";
 
 const INDEX_JSON = "index.json";
 
+function collectPlanFiles(plansDir: string): string[] {
+  const out: string[] = [];
+  const stack = [plansDir];
+  while (stack.length > 0) {
+    const dir = stack.pop() as string;
+    const entries = readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+      } else if (entry.isFile() && entry.name.endsWith(".plan.md")) {
+        out.push(full);
+      }
+    }
+  }
+  return out;
+}
+
+function resolveActivePlanCandidate(plansDir: string, name: string): string | null {
+  const normalized = name.replace(/\\/g, "/");
+  const directCandidates = [
+    resolve(plansDir, normalized),
+    resolve(plansDir, normalized.endsWith(".plan.md") ? normalized : `${normalized}.plan.md`),
+  ];
+  for (const candidate of directCandidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+
+  const targetBasenames = new Set(directCandidates.map((candidate) => candidate.split(/[/\\]/).pop() ?? ""));
+  for (const path of collectPlanFiles(plansDir)) {
+    const basename = path.split(/[/\\]/).pop() ?? "";
+    if (targetBasenames.has(basename)) return path;
+  }
+  return null;
+}
+
 export function getActivePlanPath(projectRoot: string): string | null {
   const plansDir = getPlansDir(projectRoot);
   if (!existsSync(plansDir)) return null;
@@ -19,11 +55,8 @@ export function getActivePlanPath(projectRoot: string): string | null {
       const data = JSON.parse(raw) as { activePlan?: string };
       const name = data.activePlan?.trim();
       if (name) {
-        const candidate = resolve(plansDir, name);
-        if (existsSync(candidate)) return candidate;
-        const withExt = name.endsWith(".plan.md") ? name : `${name}.plan.md`;
-        const candidate2 = resolve(plansDir, withExt);
-        if (existsSync(candidate2)) return candidate2;
+        const candidate = resolveActivePlanCandidate(plansDir, name);
+        if (candidate) return candidate;
       }
     } catch {
       /* ignore invalid index.json */
@@ -33,10 +66,7 @@ export function getActivePlanPath(projectRoot: string): string | null {
   let latestPath: string | null = null;
   let latestMtime = 0;
   try {
-    const entries = readdirSync(plansDir, { withFileTypes: true });
-    for (const e of entries) {
-      if (!e.isFile() || !e.name.endsWith(".plan.md")) continue;
-      const full = join(plansDir, e.name);
+    for (const full of collectPlanFiles(plansDir)) {
       const mtime = statSync(full).mtimeMs;
       if (mtime > latestMtime) {
         latestMtime = mtime;
