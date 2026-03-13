@@ -5,8 +5,10 @@
 import { existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
+import { createRequire } from "module";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const require = createRequire(import.meta.url);
 
 /**
  * Find project root by walking up from cwd until we find planforge.json or .planforge.
@@ -63,4 +65,13 @@ export function getDatedPlansDir(projectRoot: string, date: Date = new Date()): 
  */
 export function getTemplatesRoot(): string {
   return resolve(__dirname, "..", "..", "..", "..", "templates");
+}
+
+/**
+ * Resolve prompts directory from @planforge/core package (for planner/implementer system prompts).
+ */
+export function getPromptsDir(): string {
+  const corePackageJson = require.resolve("@planforge/core/package.json");
+  const coreRoot = dirname(corePackageJson);
+  return resolve(coreRoot, "prompts");
 }

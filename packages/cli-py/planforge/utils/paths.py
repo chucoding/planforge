@@ -57,3 +57,9 @@ def get_templates_root() -> str:
     """Resolve repo templates dir (monorepo: packages/cli-py/planforge/utils -> repo/templates)."""
     base = Path(__file__).resolve().parent.parent.parent.parent.parent
     return str(base / "templates")
+
+
+def get_prompts_dir() -> str:
+    """Resolve prompts directory from installed planforge_core package."""
+    import planforge_core
+    return str(Path(planforge_core.__file__).resolve().parent.parent / "prompts")
