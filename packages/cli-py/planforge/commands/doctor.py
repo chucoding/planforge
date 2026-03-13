@@ -4,7 +4,7 @@ import json
 import sys
 from pathlib import Path
 
-from planforge.utils.paths import get_project_root, get_plans_dir, get_templates_root
+from planforge.utils.paths import get_project_root, get_plans_dir, get_context_dir, get_templates_root
 from planforge.utils.config import load_config
 from planforge.providers.claude import check_claude, complete_one_turn as claude_complete_one_turn
 from planforge.providers.codex import check_codex, complete_one_turn as codex_complete_one_turn
@@ -70,18 +70,17 @@ def run_doctor(args: list[str]) -> None:
 
     has_plans_dir = Path(plans_dir).exists()
     checks.append((
-        ".cursor/plans",
+        ".planforge/plans",
         "ok" if has_plans_dir else "error",
         "exists" if has_plans_dir else "missing (run planforge init)",
     ))
 
-    context_dir = (config or {}).get("contextDir") or ".cursor/context"
-    context_dir_path = Path(project_root) / context_dir
+    context_dir_path = Path(get_context_dir(project_root))
     has_context_dir = context_dir_path.exists()
     checks.append((
-        "contextDir",
+        ".planforge/context",
         "ok" if has_context_dir else "warn",
-        f"{context_dir} exists" if has_context_dir else f"{context_dir} missing (run planforge init)",
+        "exists" if has_context_dir else "missing (run planforge init)",
     ))
 
     print("\nPlanForge doctor")

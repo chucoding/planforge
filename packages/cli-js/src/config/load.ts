@@ -13,8 +13,6 @@ import type { PlanForgeConfig } from "./types.js";
 const MERGE_DEFAULTS: PlanForgeConfig = {
   planner: { provider: "claude", model: "claude-opus-4-6" },
   implementer: { provider: "codex", model: "gpt-5.4" },
-  plansDir: ".cursor/plans",
-  contextDir: ".cursor/context",
 };
 
 /**
@@ -57,7 +55,5 @@ export async function loadConfig(projectRoot: string): Promise<PlanForgeConfig> 
   return {
     planner: { ...MERGE_DEFAULTS.planner, ...planner, provider: planner.provider ?? MERGE_DEFAULTS.planner.provider },
     implementer: { ...MERGE_DEFAULTS.implementer, ...implementer, provider: implementer.provider ?? MERGE_DEFAULTS.implementer.provider },
-    plansDir: loaded.plansDir ?? MERGE_DEFAULTS.plansDir,
-    contextDir: loaded.contextDir ?? MERGE_DEFAULTS.contextDir,
   };
 }

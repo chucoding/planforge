@@ -10,8 +10,6 @@ from planforge.utils.paths import get_project_root, get_templates_root
 _MERGE_DEFAULTS = {
     "planner": {"provider": "claude", "model": "claude-opus-4-6"},
     "implementer": {"provider": "codex", "model": "gpt-5.4"},
-    "plansDir": ".cursor/plans",
-    "contextDir": ".cursor/context",
 }
 
 
@@ -55,6 +53,4 @@ def load_config(project_root: str | None = None) -> dict:
     return {
         "planner": {**_MERGE_DEFAULTS["planner"], **planner, "provider": planner.get("provider", _MERGE_DEFAULTS["planner"]["provider"])},
         "implementer": {**_MERGE_DEFAULTS["implementer"], **implementer, "provider": implementer.get("provider", _MERGE_DEFAULTS["implementer"]["provider"])},
-        "plansDir": data.get("plansDir", _MERGE_DEFAULTS["plansDir"]),
-        "contextDir": data.get("contextDir", _MERGE_DEFAULTS["contextDir"]),
     }

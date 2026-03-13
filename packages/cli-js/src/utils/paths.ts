@@ -1,5 +1,5 @@
 /**
- * Path resolution for PlanForge (project root, .cursor, plans dir)
+ * Path resolution for PlanForge (project root, .planforge plans/context dirs)
  */
 
 import { existsSync } from "fs";
@@ -9,13 +9,13 @@ import { fileURLToPath } from "url";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
- * Find project root by walking up from cwd until we find planforge.json or .cursor.
+ * Find project root by walking up from cwd until we find planforge.json or .planforge.
  */
 export function getProjectRoot(cwd: string = process.cwd()): string {
   let dir = resolve(cwd);
   const root = resolve(dir, "..");
   while (dir !== root) {
-    if (existsSync(resolve(dir, "planforge.json")) || existsSync(resolve(dir, ".cursor"))) {
+    if (existsSync(resolve(dir, "planforge.json")) || existsSync(resolve(dir, ".planforge"))) {
       return dir;
     }
     dir = resolve(dir, "..");
@@ -24,7 +24,11 @@ export function getProjectRoot(cwd: string = process.cwd()): string {
 }
 
 export function getPlansDir(projectRoot: string): string {
-  return resolve(projectRoot, ".cursor", "plans");
+  return resolve(projectRoot, ".planforge", "plans");
+}
+
+export function getContextDir(projectRoot: string): string {
+  return resolve(projectRoot, ".planforge", "context");
 }
 
 /**

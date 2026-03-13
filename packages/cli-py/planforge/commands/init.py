@@ -1,10 +1,10 @@
-"""planforge init - detect providers, install slash commands, create .cursor/plans."""
+"""planforge init - detect providers, install slash commands, create .planforge/plans."""
 
 import json
 import sys
 from pathlib import Path
 
-from planforge.utils.paths import get_project_root, get_plans_dir
+from planforge.utils.paths import get_project_root, get_plans_dir, get_context_dir
 from planforge.utils.shell import run_command
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
@@ -46,9 +46,9 @@ def run_init(args: list[str]) -> None:
 
         plans_dir = get_plans_dir(project_root)
         Path(plans_dir).mkdir(parents=True, exist_ok=True)
-        print("Created .cursor/plans")
-        (Path(project_root) / ".cursor" / "context").mkdir(parents=True, exist_ok=True)
-        print("Created .cursor/context")
+        print("Created .planforge/plans")
+        Path(get_context_dir(project_root)).mkdir(parents=True, exist_ok=True)
+        print("Created .planforge/context")
 
         config_path = Path(project_root) / "planforge.json"
         if not config_path.exists():

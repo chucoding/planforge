@@ -13,7 +13,7 @@ const MAX_RIPGREP_FILES = 15;
 const MAX_RECENT_COMMITS_CHARS = 500;
 const MAX_GOAL_FILES_LOG_CHARS = 600;
 const MAX_GOAL_FILES_LOG_FILES = 5;
-const SKIP_DIRS = new Set([".git", "node_modules", ".cursor", "dist", "build", "__pycache__", ".venv", "venv"]);
+const SKIP_DIRS = new Set([".git", "node_modules", ".cursor", ".planforge", "dist", "build", "__pycache__", ".venv", "venv"]);
 
 function runGit(cwd: string, args: string[]): string | null {
   try {
@@ -65,6 +65,7 @@ function getRipgrepFileList(projectRoot: string, goal: string): string[] {
     "!.git/**",
     "!node_modules/**",
     "!.cursor/**",
+    "!.planforge/**",
     "!dist/**",
     "!build/**",
     "!__pycache__/**",
@@ -136,6 +137,7 @@ function getRipgrepContext(projectRoot: string, goal: string): string | undefine
     "!.git/**",
     "!node_modules/**",
     "!.cursor/**",
+    "!.planforge/**",
     "!dist/**",
     "!build/**",
     "!__pycache__/**",
