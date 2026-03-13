@@ -1,1 +1,1 @@
-"""PlanForge core: shared prompts and schema."""
+"""PlanForge core: shared prompts."""

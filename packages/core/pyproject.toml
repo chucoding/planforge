@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "planforge-core"
 version = "0.1.4"
-description = "PlanForge shared prompts and schema"
+description = "PlanForge shared prompts"
 requires-python = ">=3.10"
 
 [tool.hatch.build.targets.wheel]
