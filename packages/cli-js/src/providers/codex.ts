@@ -10,6 +10,7 @@ import { readFile } from "fs/promises";
 import { resolve, dirname, join } from "path";
 import { hasCommand } from "../utils/shell.js";
 import { getTemplatesRoot } from "../utils/paths.js";
+import { loadPrompt } from "../utils/prompt.js";
 import type { PlanOpts, ImplementOpts } from "./registry.js";
 
 /** npm package for global install: npm install -g @openai/codex */
@@ -204,10 +205,9 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
     if (opts?.context?.trim()) {
       body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
-    body +=
-      "\n\n---\n\nWrite the entire plan (all section headings and body) in the same language as the user's goal.";
-    body +=
-      '\n\nAt the very end of the plan, add exactly one line: "Filename slug: <slug>" where <slug> is 2–3 English words in lowercase with hyphens (e.g. add-login-page, implement-i18n). Use at most 2 hyphens. This is used for the plan file name.';
+    const appendI18n = await loadPrompt(resolve(repoRoot, "packages", "core", "prompts", "append-i18n.md"));
+    const appendSlug = await loadPrompt(resolve(repoRoot, "packages", "core", "prompts", "append-slug.md"));
+    body += "\n\n---\n\n" + appendI18n + "\n\n" + appendSlug;
     fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
   } catch {
     let fallback = DEFAULT_PLANNER_FALLBACK;
@@ -220,10 +220,8 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
     if (opts?.context?.trim()) {
       fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
     }
-    fallback +=
-      "\n\n---\n\nWrite the entire plan (all section headings and body) in the same language as the user's goal.";
-    fallback +=
-      '\n\nAt the very end of the plan, add exactly one line: "Filename slug: <slug>" where <slug> is 2–3 English words in lowercase with hyphens (e.g. add-login-page, implement-i18n). Use at most 2 hyphens. This is used for the plan file name.';
+    const root = getRepoRoot();
+    fallback += "\n\n---\n\n" + (await loadPrompt(resolve(root, "packages", "core", "prompts", "append-i18n.md"))) + "\n\n" + (await loadPrompt(resolve(root, "packages", "core", "prompts", "append-slug.md")));
     fullPrompt = fallback + "\n\n---\n\nUser goal: " + goal;
   }
 
@@ -273,8 +271,6 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     if (opts?.codeContext?.trim()) {
       body += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
     }
-    body +=
-      "\n\n---\n\nWrite any explanatory text or comments you add in the same language as the user's request.";
     fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
   } catch {
     let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
@@ -296,8 +292,6 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
     if (opts?.codeContext?.trim()) {
       fallback += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
     }
-    fallback +=
-      "\n\n---\n\nWrite any explanatory text or comments you add in the same language as the user's request.";
     fullPrompt = fallback + "\n\n---\n\nUser request: " + prompt;
   }
 
