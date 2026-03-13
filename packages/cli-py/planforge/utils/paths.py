@@ -63,3 +63,9 @@ def get_prompts_dir() -> str:
     """Resolve prompts directory from installed planforge_core package."""
     import planforge_core
     return str(Path(planforge_core.__file__).resolve().parent.parent / "prompts")
+
+
+def get_models_json_path() -> str:
+    """Resolve models.json path from installed planforge_core package."""
+    import planforge_core
+    return str(Path(planforge_core.__file__).resolve().parent.parent / "models.json")

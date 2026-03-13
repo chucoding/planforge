@@ -1,0 +1,26 @@
+{
+  "modes": ["planner", "implementer"],
+  "modeProviders": {
+    "planner": ["claude", "codex"],
+    "implementer": ["claude", "codex"]
+  },
+  "providers": {
+    "claude": {
+      "name": "Claude",
+      "models": [
+        { "id": "claude-opus-4-6", "label": "Claude Opus 4" },
+        { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4" }
+      ],
+      "effort": ["low", "medium", "high"],
+      "reasoning": ["none", "low", "medium", "high"]
+    },
+    "codex": {
+      "name": "Codex",
+      "models": [
+        { "id": "gpt-5.4", "label": "GPT-5.4" }
+      ],
+      "effort": ["low", "medium", "high"],
+      "reasoning": ["none", "low", "medium", "high"]
+    }
+  }
+}
