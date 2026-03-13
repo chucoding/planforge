@@ -115,11 +115,27 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
 /**
  * Run "codex exec" with streaming: forward stdout/stderr to the current process so the user
  * sees logs in real time (e.g. in Cursor chat terminal). Returns collected stdout when done.
+ * When allowPlanFallback is true (plan only), exit code 1 may still resolve with collected
+ * stdout if it looks like a plan (e.g. Codex 1 due to rollout/cache).
  */
-function runCodexExecStreaming(fullPrompt: string, cwd: string): Promise<string> {
+function runCodexExecStreaming(fullPrompt: string, cwd: string, allowPlanFallback = false): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const opts = { cwd };
+
+    const finish = (code: number | null) => {
+      const out = Buffer.concat(chunks).toString("utf-8").trim();
+      if (code === 0) {
+        resolve(out);
+        return;
+      }
+      if (allowPlanFallback && code === 1 && looksLikePlan(out)) {
+        console.error("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.");
+        resolve(out);
+        return;
+      }
+      reject(new Error("Codex exited with code " + code));
+    };
 
     if (process.platform === "win32") {
       const tempPath = join(tmpdir(), "planforge-" + randomBytes(8).toString("hex") + ".txt");
@@ -136,11 +152,7 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string): Promise<string>
         } catch {
           // ignore
         }
-        if (code !== 0) {
-          reject(new Error("Codex exited with code " + code));
-          return;
-        }
-        resolve(Buffer.concat(chunks).toString("utf-8").trim());
+        finish(code);
       });
       child.stdout?.on("data", (chunk: Buffer) => {
         chunks.push(chunk);
@@ -163,13 +175,7 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string): Promise<string>
     child.stderr?.on("data", (chunk: Buffer) => {
       process.stderr.write(chunk);
     });
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error("Codex exited with code " + code));
-        return;
-      }
-      resolve(Buffer.concat(chunks).toString("utf-8").trim());
-    });
+    child.on("close", (code) => finish(code));
     child.on("error", (err) => reject(err));
   });
 }
@@ -201,7 +207,7 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
 
   try {
-    return runCodexExec(fullPrompt, cwd, true);
+    return await runCodexExecStreaming(fullPrompt, cwd, true);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
