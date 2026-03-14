@@ -8,7 +8,7 @@ import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { readFile } from "fs/promises";
 import { resolve, join } from "path";
-import { hasCommand } from "../utils/shell.js";
+import { hasCommand, resolveCommandPathWithNpmFallback } from "../utils/shell.js";
 import { getPromptsDir } from "../utils/paths.js";
 import { loadPrompt } from "../utils/prompt.js";
 import type { PlanOpts, ImplementOpts } from "./registry.js";
@@ -16,8 +16,16 @@ import type { PlanOpts, ImplementOpts } from "./registry.js";
 /** npm package for global install: npm install -g @openai/codex */
 export const CLIENT_NPM_PACKAGE = "@openai/codex";
 
+/**
+ * Resolve full path to codex executable. Tries PATH first, then common install
+ * locations so it works in sandboxed environments (e.g. Cursor agent) where PATH may be restricted.
+ */
+function resolveCodexExe(): string | null {
+  return resolveCommandPathWithNpmFallback("codex");
+}
+
 export function checkCodex(): boolean {
-  return hasCommand("codex");
+  return hasCommand("codex") || resolveCodexExe() !== null;
 }
 
 /**
@@ -25,7 +33,7 @@ export function checkCodex(): boolean {
  * Used by doctor ai to show model choices; falls back to planforge.json when null.
  */
 export async function listModelsCodex(): Promise<string[] | null> {
-  if (!hasCommand("codex")) return null;
+  if (resolveCodexExe() === null) return null;
   return null;
 }
 
@@ -70,7 +78,13 @@ function looksLikePlan(stdout: string): boolean {
  * When allowPlanFallback is true, non-zero exit is still treated as success if stdout looks like a plan
  * (used only for runPlan; runImplement must not treat non-zero as success).
  */
+const CODEX_NOT_FOUND_MSG =
+  "codex not found in PATH or common locations. Install: npm install -g @openai/codex";
+
 function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false): string {
+  const exe = resolveCodexExe();
+  if (!exe) throw new Error(CODEX_NOT_FOUND_MSG);
+
   const opts = { cwd, encoding: "utf-8" as const, maxBuffer: 1024 * 1024 };
 
   if (process.platform === "win32") {
@@ -78,7 +92,8 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
     try {
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | codex exec -`;
+      const escapedExe = exe.replace(/'/g, "''");
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | & '${escapedExe}' exec -`;
       const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
       const out = (result.stdout ?? "").trim();
       if (result.status !== 0) {
@@ -99,7 +114,7 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
     }
   }
 
-  const result = spawnSync("codex", ["exec", fullPrompt], { ...opts, shell: false });
+  const result = spawnSync(exe, ["exec", fullPrompt], { ...opts, shell: false });
   const out = (result.stdout ?? "").trim();
   if (result.status !== 0) {
     if (allowPlanFallback && result.status === 1 && looksLikePlan(out)) {
@@ -119,6 +134,9 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
  * stdout if it looks like a plan (e.g. Codex 1 due to rollout/cache).
  */
 function runCodexExecStreaming(fullPrompt: string, cwd: string, allowPlanFallback = false): Promise<string> {
+  const exe = resolveCodexExe();
+  if (!exe) return Promise.reject(new Error(CODEX_NOT_FOUND_MSG));
+
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const opts = { cwd };
@@ -141,7 +159,8 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string, allowPlanFallbac
       const tempPath = join(tmpdir(), "planforge-" + randomBytes(8).toString("hex") + ".txt");
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | codex exec -`;
+      const escapedExe = exe.replace(/'/g, "''");
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | & '${escapedExe}' exec -`;
       const child = spawn("powershell", ["-NoProfile", "-Command", script], {
         ...opts,
         stdio: ["ignore", "pipe", "pipe"],
@@ -164,7 +183,7 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string, allowPlanFallbac
       return;
     }
 
-    const child = spawn("codex", ["exec", fullPrompt], {
+    const child = spawn(exe, ["exec", fullPrompt], {
       ...opts,
       stdio: ["ignore", "pipe", "pipe"],
     });

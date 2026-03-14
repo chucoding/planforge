@@ -3,53 +3,95 @@
 import os
 import subprocess
 import sys
+import tempfile
 import threading
 from pathlib import Path
 
-from planforge.utils.shell import has_command
+from planforge.utils.shell import has_command, resolve_command_path_with_npm_fallback
 from planforge.utils.paths import get_prompts_dir
 from planforge.utils.prompt import load_prompt
+
+
+def _resolve_claude_exe() -> str | None:
+    return resolve_command_path_with_npm_fallback("claude")
 
 
 def _run_claude_streaming(full_prompt: str, cwd: str) -> str:
     """Run Claude with streaming: forward stdout/stderr to the current process so the user
     sees logs in real time. Returns collected stdout when done.
+    On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd directly (CVE-2024-27980).
     """
-    proc = subprocess.Popen(
-        ["claude"],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        cwd=cwd,
-        text=True,
-    )
-    proc.stdin.write(full_prompt)
-    proc.stdin.close()
-
+    exe = _resolve_claude_exe()
+    if not exe:
+        raise RuntimeError(
+            "claude not found in PATH or common locations (e.g. npm global bin). "
+            "Install: npm install -g @anthropic-ai/claude-code"
+        )
     stdout_chunks: list[str] = []
 
-    def read_stdout() -> None:
-        if proc.stdout is None:
+    if os.name == "nt":
+        fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-claude-")
+        try:
+            os.write(fd, full_prompt.encode("utf-8"))
+            os.close(fd)
+            escaped = temp_path.replace("'", "''")
+            escaped_exe = exe.replace("'", "''")
+            script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | & '{escaped_exe}'"
+            proc = subprocess.Popen(
+                ["powershell", "-NoProfile", "-Command", script],
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
+    else:
+        proc = subprocess.Popen(
+            [exe],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            cwd=cwd,
+            text=True,
+        )
+        proc.stdin.write(full_prompt)
+        proc.stdin.close()
+        temp_path = None
+
+    def read_stdout(p: subprocess.Popen) -> None:
+        if p.stdout is None:
             return
-        for line in iter(proc.stdout.readline, ""):
+        for line in iter(p.stdout.readline, ""):
             stdout_chunks.append(line)
             sys.stdout.write(line)
             sys.stdout.flush()
 
-    def read_stderr() -> None:
-        if proc.stderr is None:
+    def read_stderr(p: subprocess.Popen) -> None:
+        if p.stderr is None:
             return
-        for line in iter(proc.stderr.readline, ""):
+        for line in iter(p.stderr.readline, ""):
             sys.stderr.write(line)
             sys.stderr.flush()
 
-    t_out = threading.Thread(target=read_stdout)
-    t_err = threading.Thread(target=read_stderr)
+    t_out = threading.Thread(target=read_stdout, args=(proc,))
+    t_err = threading.Thread(target=read_stderr, args=(proc,))
     t_out.daemon = True
     t_err.daemon = True
     t_out.start()
     t_err.start()
     proc.wait()
+
+    if temp_path is not None:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
     t_out.join(timeout=1.0)
     t_err.join(timeout=1.0)
 
@@ -60,7 +102,7 @@ def _run_claude_streaming(full_prompt: str, cwd: str) -> str:
 
 
 def check_claude() -> bool:
-    return has_command("claude")
+    return has_command("claude") or _resolve_claude_exe() is not None
 
 
 def complete_one_turn(
@@ -70,18 +112,49 @@ def complete_one_turn(
     cwd: str | None = None,
     model: str | None = None,
 ) -> str:
-    """Single-turn completion for doctor ai workflow tests."""
+    """Single-turn completion for doctor ai workflow tests.
+    On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd directly (CVE-2024-27980).
+    """
     cwd = cwd or os.getcwd()
-    args = ["--system-prompt", system_prompt.strip(), "-p", user_message.strip()]
-    if model:
-        args = ["--model", model] + args
-    result = subprocess.run(
-        ["claude"] + args,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    exe = _resolve_claude_exe()
+    if not exe:
+        raise RuntimeError(
+            "claude not found in PATH or common locations. Install: npm install -g @anthropic-ai/claude-code"
+        )
+    full_prompt = system_prompt.strip() + "\n\n---\n\nUser: " + user_message.strip()
+
+    if os.name == "nt":
+        fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-claude-")
+        try:
+            os.write(fd, full_prompt.encode("utf-8"))
+            os.close(fd)
+            escaped = temp_path.replace("'", "''")
+            escaped_exe = exe.replace("'", "''")
+            model_arg = " --model '" + model.replace("'", "''") + "'" if model else ""
+            script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | & '{escaped_exe}'{model_arg}"
+            result = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", script],
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        finally:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+    else:
+        args = ["--system-prompt", system_prompt.strip(), "-p", user_message.strip()]
+        if model:
+            args = ["--model", model] + args
+        result = subprocess.run(
+            [exe] + args,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
     if result.returncode != 0:
         msg = result.stderr or result.stdout or "Claude exited non-zero"
         raise RuntimeError("Claude complete_one_turn failed: " + msg)
@@ -130,15 +203,7 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
     if (opts.get("codeContext") or "").strip():
         body += "\n\n---\n\nRelevant file contents:\n" + (opts["codeContext"] or "").strip()
     full_prompt = body + "\n\n---\n\nUser request: " + prompt
-    result = subprocess.run(
-        ["claude"],
-        input=full_prompt,
-        cwd=cwd,
-        capture_output=True,
-        text=True,
-        timeout=300,
-    )
-    if result.returncode != 0:
-        msg = result.stderr or result.stdout or "Claude exited non-zero"
-        raise RuntimeError("Claude implement failed: " + msg)
-    return (result.stdout or "").strip()
+    try:
+        return _run_claude_streaming(full_prompt, cwd)
+    except Exception as e:
+        raise RuntimeError("Claude implement failed: " + str(e)) from e

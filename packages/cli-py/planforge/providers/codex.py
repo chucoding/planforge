@@ -7,13 +7,20 @@ import tempfile
 import threading
 from pathlib import Path
 
-from planforge.utils.shell import has_command
+from planforge.utils.shell import has_command, resolve_command_path_with_npm_fallback
 from planforge.utils.paths import get_prompts_dir
 from planforge.utils.prompt import load_prompt
 
 
+CODEX_NOT_FOUND_MSG = "codex not found in PATH or common locations. Install: npm install -g @openai/codex"
+
+
+def _resolve_codex_exe() -> str | None:
+    return resolve_command_path_with_npm_fallback("codex")
+
+
 def check_codex() -> bool:
-    return has_command("codex")
+    return has_command("codex") or _resolve_codex_exe() is not None
 
 
 def complete_one_turn(
@@ -51,14 +58,18 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
     return stdout if it looks like a plan (e.g. Codex 1 due to rollout/cache). Other non-zero
     (timeout, signals) are never accepted. For implement, leave False so non-zero is always failure.
     """
-    max_buffer = 1024 * 1024
+    exe = _resolve_codex_exe()
+    if not exe:
+        raise RuntimeError(CODEX_NOT_FOUND_MSG)
+
     if os.name == "nt":
         fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-")
         try:
             os.write(fd, full_prompt.encode("utf-8"))
             os.close(fd)
             escaped = temp_path.replace("'", "''")
-            script = f"codex exec (Get-Content -Raw -LiteralPath '{escaped}')"
+            escaped_exe = exe.replace("'", "''")
+            script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | & '{escaped_exe}' exec -"
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", script],
                 cwd=cwd,
@@ -80,7 +91,7 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
             except OSError:
                 pass
     result = subprocess.run(
-        ["codex", "exec", full_prompt],
+        [exe, "exec", full_prompt],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -103,6 +114,10 @@ def _run_codex_exec_streaming(
     sees logs in real time. Returns collected stdout when done. When allow_plan_fallback is True
     (plan only), exit code 1 may still return stdout if it looks like a plan.
     """
+    exe = _resolve_codex_exe()
+    if not exe:
+        raise RuntimeError(CODEX_NOT_FOUND_MSG)
+
     stdout_chunks: list[str] = []
 
     def read_stdout(proc: subprocess.Popen) -> None:
@@ -126,7 +141,8 @@ def _run_codex_exec_streaming(
             os.write(fd, full_prompt.encode("utf-8"))
             os.close(fd)
             escaped = temp_path.replace("'", "''")
-            script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | codex exec -"
+            escaped_exe = exe.replace("'", "''")
+            script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | & '{escaped_exe}' exec -"
             proc = subprocess.Popen(
                 ["powershell", "-NoProfile", "-Command", script],
                 cwd=cwd,
@@ -142,7 +158,7 @@ def _run_codex_exec_streaming(
             raise
     else:
         proc = subprocess.Popen(
-            ["codex", "exec", full_prompt],
+            [exe, "exec", full_prompt],
             cwd=cwd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
