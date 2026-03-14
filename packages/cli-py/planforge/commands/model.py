@@ -4,9 +4,8 @@ import json
 import sys
 from pathlib import Path
 
-import readchar
-
 from planforge.utils.paths import get_project_root, get_models_json_path
+from planforge.utils.tui import wait_key
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 
@@ -17,28 +16,6 @@ def _load_models_catalog() -> dict:
         raise FileNotFoundError(f"models.json not found at {path}. Check planforge-core package.")
     with open(path, encoding="utf-8") as f:
         return json.load(f)
-
-
-def _normalize_key(key: str) -> str | None:
-    """Map readchar key or escape sequence to up/down/left/right/enter."""
-    if key in ("\r", "\n"):
-        return "enter"
-    key_mod = getattr(readchar, "key", None)
-    up = getattr(key_mod, "UP", None) if key_mod else None
-    down = getattr(key_mod, "DOWN", None) if key_mod else None
-    left = getattr(key_mod, "LEFT", None) if key_mod else None
-    right = getattr(key_mod, "RIGHT", None) if key_mod else None
-    if key in ("\x1b[A", "w", "k") or key == up:
-        return "up"
-    if key in ("\x1b[B", "s", "j") or key == down:
-        return "down"
-    if key in ("\x1b[D", "a", "h") or key == left:
-        return "left"
-    if key in ("\x1b[C", "d", "l") or key == right:
-        return "right"
-    if key == "\x03":  # Ctrl+C
-        return "quit"
-    return None
 
 
 def _run_model_tui(catalog: dict, project_root: str, has_claude: bool, has_codex: bool) -> tuple[str, dict] | None:
@@ -54,7 +31,7 @@ def _run_model_tui(catalog: dict, project_root: str, has_claude: bool, has_codex
         for i, m in enumerate(modes):
             prefix = "  > " if i == mode_index else "    "
             print(f"{prefix} {m}")
-        key = _normalize_key(readchar.readkey())
+        key = wait_key()
         if key == "quit":
             return None
         if key == "enter":
@@ -84,7 +61,7 @@ def _run_model_tui(catalog: dict, project_root: str, has_claude: bool, has_codex
                 name = providers_data.get(p, {}).get("name", p)
                 prefix = "  > " if i == prov_index else "    "
                 print(f"{prefix} {name} ({p})")
-            key = _normalize_key(readchar.readkey())
+            key = wait_key()
             if key == "quit":
                 return None
             if key == "enter":
@@ -107,14 +84,15 @@ def _run_model_tui(catalog: dict, project_root: str, has_claude: bool, has_codex
         print("No models defined for this provider.", file=sys.stderr)
         return None
 
-    # Step 3a: model selection (Up/Down, Enter to confirm)
+    # Step 3a: model selection (Up/Down, Enter to confirm). Last model = cheapest, shown as (recommended).
     model_index = 0
     print("\n  [Up/Down] model  Enter to confirm\n")
     while True:
         for i, m in enumerate(models):
             prefix = "  > " if i == model_index else "    "
-            print(f"{prefix}{m['label']} ({m['id']})")
-        key = _normalize_key(readchar.readkey())
+            rec = "  (recommended)" if i == len(models) - 1 else ""
+            print(f"{prefix}{m['label']} ({m['id']}){rec}")
+        key = wait_key()
         if key == "quit":
             return None
         if key == "enter":
@@ -136,7 +114,7 @@ def _run_model_tui(catalog: dict, project_root: str, has_claude: bool, has_codex
         for i, val in enumerate(opts):
             prefix = "  > " if i == opt_index else "    "
             print(prefix + val)
-        key = _normalize_key(readchar.readkey())
+        key = wait_key()
         if key == "quit":
             return None
         if key == "enter":

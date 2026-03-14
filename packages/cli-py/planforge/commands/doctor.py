@@ -14,6 +14,8 @@ from planforge.utils.paths import (
 from planforge.utils.config import load_config
 from planforge.providers.claude import check_claude, complete_one_turn as claude_complete_one_turn
 from planforge.providers.codex import check_codex, complete_one_turn as codex_complete_one_turn
+from planforge.utils.tui import wait_key
+from planforge.commands.model import _load_models_catalog
 
 
 def _status_symbol(status: str) -> str:
@@ -189,6 +191,28 @@ def _build_model_list_from_config(config: dict, has_claude: bool, has_codex: boo
     return options
 
 
+def _build_options_from_catalog(
+    catalog: dict, has_claude: bool, has_codex: bool
+) -> list[tuple[str, str, bool]]:
+    """Build flat (provider, model, recommended) from models.json catalog for available providers."""
+    options: list[tuple[str, str, bool]] = []
+    seen: set[str] = set()
+    for provider_id, prov_data in catalog.get("providers", {}).items():
+        if provider_id == "claude" and not has_claude:
+            continue
+        if provider_id == "codex" and not has_codex:
+            continue
+        models = prov_data.get("models", []) if isinstance(prov_data, dict) else []
+        for m in models:
+            model_id = m.get("id", "") if isinstance(m, dict) else ""
+            key = f"{provider_id}|{model_id}"
+            if key in seen:
+                continue
+            seen.add(key)
+            options.append((provider_id, model_id, False))
+    return options
+
+
 def run_doctor_ai(args: list[str]) -> None:
     project_root = get_project_root()
     has_claude = check_claude()
@@ -199,10 +223,24 @@ def run_doctor_ai(args: list[str]) -> None:
         print("Failed to load planforge.json:", e, file=sys.stderr)
         raise SystemExit(1) from e
 
-    options = _build_model_list_from_config(config, has_claude, has_codex)
+    catalog = None
+    try:
+        catalog = _load_models_catalog()
+    except FileNotFoundError:
+        catalog = None
+
+    if catalog is not None:
+        options = _build_options_from_catalog(catalog, has_claude, has_codex)
+    else:
+        options = _build_model_list_from_config(config, has_claude, has_codex)
+
     if not options:
         print("No AI provider available. Install Claude or Codex CLI and run planforge init.", file=sys.stderr)
         raise SystemExit(1)
+
+    # recommended = current planforge.json planner (plan assumption)
+    planner_key = f"{config.planner.get('provider', '')}|{config.planner.get('model', '')}"
+    options = [(p, m, (p + "|" + m) == planner_key) for (p, m, _) in options]
 
     provider_arg = None
     model_arg = None
@@ -219,24 +257,34 @@ def run_doctor_ai(args: list[str]) -> None:
             raise SystemExit(1)
         selected = (match[0], match[1])
     elif sys.stdin.isatty():
-        print("\nPlanForge doctor ai - select AI to run workflow tests\n")
-        for i, (prov, model, rec) in enumerate(options, 1):
-            rec_str = "  (recommended)" if rec else ""
-            print(f"  {i}. {prov} ({model}){rec_str}")
+        pl = config.planner
+        impl = config.implementer
+        pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
+        impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
+        print("\n  Current AI config")
+        print("  -----------------")
+        print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}  (recommended)")
+        print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
         print("")
-        try:
-            raw = input("? Select AI to run workflow tests [1-" + str(len(options)) + "]: ").strip()
-        except (EOFError, KeyboardInterrupt):
-            raise SystemExit(1)
-        try:
-            n = int(raw)
-        except ValueError:
-            print("Invalid choice.", file=sys.stderr)
-            raise SystemExit(1)
-        if n < 1 or n > len(options):
-            print("Invalid choice.", file=sys.stderr)
-            raise SystemExit(1)
-        selected = (options[n - 1][0], options[n - 1][1])
+        print("  Select AI for workflow test  [Up/Down]  Enter to confirm\n")
+        index = 0
+        while True:
+            for i, (prov, model, rec) in enumerate(options):
+                rec_str = "  (recommended)" if rec else ""
+                prefix = "  > " if i == index else "    "
+                print(f"{prefix}{prov} ({model}){rec_str}")
+            key = wait_key()
+            if key == "quit":
+                raise SystemExit(0)
+            if key == "enter":
+                break
+            if key == "up":
+                index = (index - 1) % len(options)
+            elif key == "down":
+                index = (index + 1) % len(options)
+            sys.stdout.write(f"\033[{len(options)}A\033[0J")
+            sys.stdout.flush()
+        selected = (options[index][0], options[index][1])
     else:
         selected = (options[0][0], options[0][1])
 

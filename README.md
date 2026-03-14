@@ -61,7 +61,7 @@ Both skills are script-first by design: they must execute the bundled `.cursor/s
 | `planforge config show` | Print current `planforge.json`. |
 | `planforge config suggest [--apply]` | Show suggested config for installed providers; `--apply` writes it to `planforge.json`. |
 | `planforge doctor` | Check Claude/Codex CLI, provider instruction files (`CLAUDE.md`/`AGENTS.md`), `planforge.json`, `.planforge/plans`, and `.planforge/contexts`. |
-| `planforge doctor ai` | Run workflow compliance tests with AI: list models (from planforge.json), show selection UI with (recommended) for current planner, then run TC1/TC2. Use `--provider` and `--model` to skip UI. |
+| `planforge doctor ai` | Run workflow compliance tests with AI: same interactive UI as `planforge model` (mode → provider → model, with cheapest model marked (recommended)). Uses models from `models.json` when available. Use `--provider` and `--model` to skip UI. |
 | `planforge install [-f]` | Install `.cursor/skills` and `.cursor/rules`; `-f` overwrites existing `planforge.json`. |
 
 ## Installation
@@ -113,7 +113,7 @@ When `planforge.json` is missing or created by init, default config is chosen fr
 
 Run `planforge config suggest` to preview, or `planforge config suggest --apply` to write.
 
-**Doctor AI**: `planforge doctor ai` shows available models (from planforge.json when CLI does not provide a free model list), lets you choose which AI to run workflow tests with, and marks the current planner in planforge.json as **(recommended)**. It then runs two tests (plan request, implement request) and reports pass/fail.
+**Doctor AI**: `planforge doctor ai` uses the same interactive model selection as `planforge model` (mode → provider → model, with effort/reasoning). The model list comes from `models.json` when available; the cheapest model (last in each provider’s list) is shown as **(recommended)**. It then runs workflow tests (plan request, implement request, etc.) and reports pass/fail.
 
 ## Example Structure
 

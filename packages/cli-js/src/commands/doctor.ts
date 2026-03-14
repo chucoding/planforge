@@ -2,7 +2,6 @@
  * planforge doctor - check environment and providers
  */
 
-import * as readline from "readline";
 import fs from "fs-extra";
 import { resolve } from "path";
 import {
@@ -12,10 +11,12 @@ import {
   getLegacyContextDir,
   getTemplatesRoot,
 } from "../utils/paths.js";
+import { waitKey } from "../utils/tui.js";
 import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
 import { checkClaude, listModelsClaude, completeOneTurn as claudeCompleteOneTurn } from "../providers/claude.js";
 import { checkCodex, listModelsCodex, completeOneTurn as codexCompleteOneTurn } from "../providers/codex.js";
+import { loadModelsCatalog, type ModelsCatalog } from "./model.js";
 
 type Status = "ok" | "warn" | "error";
 
@@ -222,14 +223,29 @@ function buildModelListFromConfig(config: PlanForgeConfig, hasClaude: boolean, h
   return options;
 }
 
-function ask(question: string): Promise<string> {
-  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolveAnswer) => {
-    rl.question(question, (answer) => {
-      rl.close();
-      resolveAnswer((answer ?? "").trim());
-    });
-  });
+/** Build flat provider/model options from models.json catalog for available providers only. */
+function buildOptionsFromCatalog(catalog: ModelsCatalog, hasClaude: boolean, hasCodex: boolean): DoctorAiModelOption[] {
+  const options: DoctorAiModelOption[] = [];
+  const seen = new Set<string>();
+  for (const providerId of Object.keys(catalog.providers)) {
+    if (providerId === "claude" && !hasClaude) continue;
+    if (providerId === "codex" && !hasCodex) continue;
+    const prov = catalog.providers[providerId];
+    const models = prov?.models ?? [];
+    for (const m of models) {
+      const key = providerId + "|" + m.id;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      options.push({ provider: providerId, model: m.id, recommended: false });
+    }
+  }
+  return options;
+}
+
+function formatRoleLine(role: string, provider: string, model: string, extra?: string, recommended?: boolean): string {
+  const rec = recommended ? "  (recommended)" : "";
+  const ext = extra != null && extra !== "" ? ` (${extra})` : "";
+  return `  ${role.padEnd(12)}: ${provider.padEnd(6)} / ${model.padEnd(20)}${ext}${rec}`;
 }
 
 export async function runDoctorAi(args: string[]): Promise<void> {
@@ -246,37 +262,54 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  const claudeModels = await listModelsClaude();
-  const codexModels = await listModelsCodex();
+  let catalog: ModelsCatalog | null = null;
+  try {
+    catalog = loadModelsCatalog();
+  } catch {
+    catalog = null;
+  }
+
   let options: DoctorAiModelOption[];
-  if (claudeModels !== null || codexModels !== null) {
-    options = [];
-    if (claudeModels !== null && hasClaude) {
-      for (const model of claudeModels) {
-        options.push({
-          provider: "claude",
-          model,
-          recommended: config.planner.provider === "claude" && config.planner.model === model,
-        });
-      }
-    }
-    if (codexModels !== null && hasCodex) {
-      for (const model of codexModels) {
-        options.push({
-          provider: "codex",
-          model,
-          recommended: config.planner.provider === "codex" && config.planner.model === model,
-        });
-      }
-    }
-    if (options.length === 0) options = buildModelListFromConfig(config, hasClaude, hasCodex);
+  if (catalog !== null) {
+    options = buildOptionsFromCatalog(catalog, hasClaude, hasCodex);
   } else {
-    options = buildModelListFromConfig(config, hasClaude, hasCodex);
+    const claudeModels = await listModelsClaude();
+    const codexModels = await listModelsCodex();
+    if (claudeModels !== null || codexModels !== null) {
+      options = [];
+      if (claudeModels !== null && hasClaude) {
+        for (const model of claudeModels) {
+          options.push({
+            provider: "claude",
+            model,
+            recommended: config.planner.provider === "claude" && config.planner.model === model,
+          });
+        }
+      }
+      if (codexModels !== null && hasCodex) {
+        for (const model of codexModels) {
+          options.push({
+            provider: "codex",
+            model,
+            recommended: config.planner.provider === "codex" && config.planner.model === model,
+          });
+        }
+      }
+      if (options.length === 0) options = buildModelListFromConfig(config, hasClaude, hasCodex);
+    } else {
+      options = buildModelListFromConfig(config, hasClaude, hasCodex);
+    }
   }
 
   if (options.length === 0) {
     console.error("No AI provider available. Install Claude or Codex CLI and run planforge init.");
     process.exit(1);
+  }
+
+  // recommended = current planforge.json planner (plan assumption)
+  const plannerKey = config.planner.provider + "|" + config.planner.model;
+  for (const o of options) {
+    o.recommended = (o.provider + "|" + o.model) === plannerKey;
   }
 
   const providerArg = args.includes("--provider") ? args[args.indexOf("--provider") + 1] : undefined;
@@ -290,19 +323,31 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     }
     selected = match;
   } else if (process.stdin.isTTY) {
-    console.log("\nPlanForge doctor ai - select AI to run workflow tests\n");
-    options.forEach((o, i) => {
-      const rec = o.recommended ? "  (recommended)" : "";
-      console.log(`  ${i + 1}. ${o.provider} (${o.model})${rec}`);
-    });
+    console.log("\n  Current AI config");
+    console.log("  -----------------");
+    const pl = config.planner;
+    const impl = config.implementer;
+    const plExtra = pl.effort != null ? `effort: ${pl.effort}` : pl.reasoning != null ? `reasoning: ${pl.reasoning}` : undefined;
+    const implExtra = impl.effort != null ? `effort: ${impl.effort}` : impl.reasoning != null ? `reasoning: ${impl.reasoning}` : undefined;
+    console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, true));
+    console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
     console.log("");
-    const raw = await ask("? Select AI to run workflow tests [1-" + options.length + "]: ");
-    const n = parseInt(raw, 10);
-    if (Number.isNaN(n) || n < 1 || n > options.length) {
-      console.error("Invalid choice.");
-      process.exit(1);
+    console.log("  Select AI for workflow test  [Up/Down]  Enter to confirm\n");
+    let index = 0;
+    while (true) {
+      for (let i = 0; i < options.length; i++) {
+        const o = options[i];
+        const rec = o.recommended ? "  (recommended)" : "";
+        console.log((i === index ? "  > " : "    ") + `${o.provider} (${o.model})${rec}`);
+      }
+      const key = await waitKey();
+      if (key === "quit") process.exit(0);
+      if (key === "enter") break;
+      if (key === "up") index = (index - 1 + options.length) % options.length;
+      if (key === "down") index = (index + 1) % options.length;
+      process.stdout.write(`\x1b[${options.length}A\x1b[0J`);
     }
-    selected = options[n - 1];
+    selected = options[index];
   } else {
     selected = options[0];
   }
