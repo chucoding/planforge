@@ -1,11 +1,11 @@
 ---
-description: PlanForge — Cursor 에이전트 터미널 실행 시 타임아웃(30초) 우회
+description: PlanForge — avoid Cursor agent terminal default timeout (~30s) for plan/implement
 globs:
 alwaysApply: true
 ---
 
 # PlanForge: Cursor Agent Terminal (plan/implement)
 
-- **planforge plan** 및 **planforge implement** 실행 시 Cursor 에이전트 터미널 기본 타임아웃(~30초)에 걸리지 않도록 한다.
-- 터미널 도구로 위 명령을 실행할 때 **block_until_ms**(또는 동일 의미의 최대 대기 파라미터)를 **300000**(5분) 이상으로 설정하여 실행한다. plan/implement는 1~5분 걸릴 수 있으므로 30초로 끊기지 않게 한다.
-- 해당 파라미터를 지원하지 않는 모델/환경이면, 규칙만으로는 제한을 바꿀 수 없음을 인지하고, 필요 시 사용자에게 "로컬 터미널에서 `planforge plan` / `planforge implement`를 직접 실행하면 스트리밍을 끝까지 볼 수 있다"고 안내한다.
+- When running **planforge plan** or **planforge implement**, avoid hitting the Cursor agent terminal default timeout (~30s).
+- Run those commands with **block_until_ms** (or equivalent max-wait parameter) set to **300000** (5 minutes) or more, since plan/implement may take 1–5 minutes.
+- If the environment does not support that parameter, note that the rule cannot change the limit; when needed, tell the user they can run `planforge plan` / `planforge implement` in a local terminal to see streaming to completion.
