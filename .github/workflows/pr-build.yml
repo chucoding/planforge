@@ -26,6 +26,7 @@ jobs:
         with:
           node-version: 20
           cache: "pnpm"
+          cache-dependency-path: packages/cli-js/pnpm-lock.yaml
 
       - name: Validate Cursor assets
         run: node scripts/validate_cursor_assets.mjs
