@@ -4,8 +4,46 @@
 
 import { execSync, spawnSync } from "child_process";
 import { existsSync } from "fs";
+import { join } from "path";
 
 const isWindows = process.platform === "win32";
+
+/**
+ * Common npm global install locations (for sandboxed environments where PATH may be restricted).
+ * Used by resolveCommandPathWithNpmFallback.
+ */
+export function getNpmGlobalExeCandidates(cmd: string): string[] {
+  if (isWindows) {
+    const appData = process.env.APPDATA;
+    const localAppData = process.env.LOCALAPPDATA;
+    const candidates = [
+      appData && join(appData, "npm", `${cmd}.cmd`),
+      appData && join(appData, "npm", cmd),
+      localAppData && join(localAppData, "npm", `${cmd}.cmd`),
+      localAppData && join(localAppData, "npm", cmd),
+    ].filter((p): p is string => Boolean(p));
+    return candidates;
+  }
+  const home = process.env.HOME;
+  if (!home) return [];
+  return [
+    join(home, ".npm-global", "bin", cmd),
+    join(home, ".local", "bin", cmd),
+    join(home, "npm", "bin", cmd),
+    "/usr/local/bin/" + cmd,
+  ];
+}
+
+/**
+ * Resolve full path to command: try PATH first, then common npm global locations.
+ * Works in sandboxed environments (e.g. Cursor agent) where PATH may not include npm global bin.
+ */
+export function resolveCommandPathWithNpmFallback(cmd: string): string | null {
+  const fromPath = resolveCommandPath(cmd);
+  if (fromPath) return fromPath;
+  const candidate = getNpmGlobalExeCandidates(cmd).find((p) => existsSync(p));
+  return candidate ?? null;
+}
 
 export function runCommand(cmd: string, args: string[], cwd?: string): string {
   const full = [cmd, ...args].join(" ");

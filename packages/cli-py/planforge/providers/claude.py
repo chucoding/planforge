@@ -6,17 +6,27 @@ import sys
 import threading
 from pathlib import Path
 
-from planforge.utils.shell import has_command
+from planforge.utils.shell import has_command, resolve_command_path_with_npm_fallback
 from planforge.utils.paths import get_prompts_dir
 from planforge.utils.prompt import load_prompt
+
+
+def _resolve_claude_exe() -> str | None:
+    return resolve_command_path_with_npm_fallback("claude")
 
 
 def _run_claude_streaming(full_prompt: str, cwd: str) -> str:
     """Run Claude with streaming: forward stdout/stderr to the current process so the user
     sees logs in real time. Returns collected stdout when done.
     """
+    exe = _resolve_claude_exe()
+    if not exe:
+        raise RuntimeError(
+            "claude not found in PATH or common locations (e.g. npm global bin). "
+            "Install: npm install -g @anthropic-ai/claude-code"
+        )
     proc = subprocess.Popen(
-        ["claude"],
+        [exe],
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -60,7 +70,7 @@ def _run_claude_streaming(full_prompt: str, cwd: str) -> str:
 
 
 def check_claude() -> bool:
-    return has_command("claude")
+    return has_command("claude") or _resolve_claude_exe() is not None
 
 
 def complete_one_turn(
@@ -72,11 +82,16 @@ def complete_one_turn(
 ) -> str:
     """Single-turn completion for doctor ai workflow tests."""
     cwd = cwd or os.getcwd()
+    exe = _resolve_claude_exe()
+    if not exe:
+        raise RuntimeError(
+            "claude not found in PATH or common locations. Install: npm install -g @anthropic-ai/claude-code"
+        )
     args = ["--system-prompt", system_prompt.strip(), "-p", user_message.strip()]
     if model:
         args = ["--model", model] + args
     result = subprocess.run(
-        ["claude"] + args,
+        [exe] + args,
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -130,8 +145,13 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
     if (opts.get("codeContext") or "").strip():
         body += "\n\n---\n\nRelevant file contents:\n" + (opts["codeContext"] or "").strip()
     full_prompt = body + "\n\n---\n\nUser request: " + prompt
+    exe = _resolve_claude_exe()
+    if not exe:
+        raise RuntimeError(
+            "claude not found in PATH or common locations. Install: npm install -g @anthropic-ai/claude-code"
+        )
     result = subprocess.run(
-        ["claude"],
+        [exe],
         input=full_prompt,
         cwd=cwd,
         capture_output=True,

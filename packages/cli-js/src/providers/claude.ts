@@ -5,7 +5,7 @@
 import { spawn, spawnSync } from "child_process";
 import { readFile } from "fs/promises";
 import { resolve } from "path";
-import { hasCommand } from "../utils/shell.js";
+import { hasCommand, resolveCommandPathWithNpmFallback } from "../utils/shell.js";
 import { getPromptsDir } from "../utils/paths.js";
 import { loadPrompt } from "../utils/prompt.js";
 import type { PlanOpts, ImplementOpts } from "./registry.js";
@@ -13,8 +13,17 @@ import type { PlanOpts, ImplementOpts } from "./registry.js";
 /** npm package for global install: npm install -g @anthropic-ai/claude-code */
 export const CLIENT_NPM_PACKAGE = "@anthropic-ai/claude-code";
 
+/**
+ * Resolve full path to claude executable. Tries PATH first, then common install
+ * locations (e.g. npm global bin) so it works in sandboxed environments (e.g. Cursor agent)
+ * where PATH may be restricted.
+ */
+function resolveClaudeExe(): string | null {
+  return resolveCommandPathWithNpmFallback("claude");
+}
+
 export function checkClaude(): boolean {
-  return hasCommand("claude");
+  return hasCommand("claude") || resolveClaudeExe() !== null;
 }
 
 /**
@@ -22,7 +31,7 @@ export function checkClaude(): boolean {
  * Used by doctor ai to show model choices; falls back to planforge.json when null.
  */
 export async function listModelsClaude(): Promise<string[] | null> {
-  if (!hasCommand("claude")) return null;
+  if (resolveClaudeExe() === null) return null;
   return null;
 }
 
@@ -40,12 +49,18 @@ export async function completeOneTurn(
   opts?: CompleteOneTurnOpts
 ): Promise<string> {
   const cwd = opts?.cwd ?? process.cwd();
+  const exe = resolveClaudeExe();
+  if (!exe) {
+    throw new Error(
+      "claude not found in PATH or common locations (e.g. npm global bin). Install: npm install -g @anthropic-ai/claude-code"
+    );
+  }
   const args: string[] = ["--system-prompt", systemPrompt.trim(), "-p", userMessage.trim()];
   if (opts?.model) {
     args.unshift("--model", opts.model);
   }
   try {
-    const result = spawnSync("claude", args, {
+    const result = spawnSync(exe, args, {
       encoding: "utf-8",
       cwd,
       maxBuffer: 512 * 1024,
@@ -147,9 +162,17 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
  * sees logs in real time (e.g. in Cursor chat terminal). Returns collected stdout when done.
  */
 function runClaudeStreaming(fullPrompt: string, cwd: string): Promise<string> {
+  const exe = resolveClaudeExe();
+  if (!exe) {
+    return Promise.reject(
+      new Error(
+        "claude not found in PATH or common locations (e.g. npm global bin). Install: npm install -g @anthropic-ai/claude-code"
+      )
+    );
+  }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    const child = spawn("claude", [], {
+    const child = spawn(exe, [], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
     });
