@@ -41,14 +41,21 @@ def _run_streaming_doctor_tc(
     response = ""
     pass_shown = False
 
+    _dim = "\033[2m"
+    _reset = "\033[0m"
+    _pass_color = "\033[92m"
+    _fail_color = "\033[31m"
+    _check = "\u2713"
+    _cross = "\u2717"
+
     def render(suffix: str = "") -> None:
         normalized = " ".join(response.split())
         sys.stdout.write("\r\033[2K")
-        sys.stdout.write(f"    response: {normalized}{suffix}")
+        sys.stdout.write(f"    {_dim}response:{_reset} {normalized}{suffix}")
         sys.stdout.flush()
 
-    print(f"  {label}")
-    sys.stdout.write("    response: ")
+    print(f"  \033[36m{label}{_reset}")
+    sys.stdout.write(f"    {_dim}response:{_reset} ")
     sys.stdout.flush()
 
     def _handle_chunk(chunk: str) -> None:
@@ -56,7 +63,7 @@ def _run_streaming_doctor_tc(
         response += chunk
         if not pass_shown and any(keyword in response for keyword in expected_keywords):
             pass_shown = True
-            render("  [OK] PASS")
+            render(f"  {_pass_color}{_check} PASS{_reset}")
             return
         if not pass_shown:
             render()
@@ -71,11 +78,11 @@ def _run_streaming_doctor_tc(
         )
         response = final_response
         passed = any(keyword in response for keyword in expected_keywords)
-        render("  [OK] PASS" if passed else "  [FAIL]")
+        render(f"  {_pass_color}{_check} PASS{_reset}" if passed else f"  {_fail_color}{_cross} FAIL{_reset}")
         print("")
         return passed, None
     except Exception as e:
-        render("  [FAIL]")
+        render(f"  {_fail_color}{_cross} FAIL{_reset}")
         print("")
         return False, str(e)
 
@@ -470,7 +477,17 @@ def run_doctor_ai(args: list[str]) -> None:
         planner_complete = claude_complete_one_turn if selected_planner[0] == "claude" else codex_complete_one_turn
         implementer_complete = claude_complete_one_turn if selected_implementer[0] == "claude" else codex_complete_one_turn
 
-        print("\nRunning workflow tests (planner: " + selected_planner[0] + " / " + selected_planner[1] + ", implementer: " + selected_implementer[0] + " / " + selected_implementer[1] + ")...\n")
+        _cyan = "\033[36m"
+        _dim = "\033[2m"
+        _green = "\033[92m"
+        _red = "\033[31m"
+        _reset = "\033[0m"
+        _check = "\u2713"
+        _cross = "\u2717"
+        print("")
+        print(_cyan + "  \u2500\u2500\u2500 Workflow tests \u2500\u2500\u2500" + _reset)
+        print(_dim + "  planner: " + selected_planner[0] + " / " + selected_planner[1] + "  \u00b7  implementer: " + selected_implementer[0] + " / " + selected_implementer[1] + _reset)
+        print("")
 
         tc1_pass = False
         tc2_pass = False
@@ -511,13 +528,10 @@ def run_doctor_ai(args: list[str]) -> None:
             )
             if tc3_error:
                 print("TC3 (/p with implementation-style request) error:", tc3_error, file=sys.stderr)
-            _green = "\033[92m"  # bright/fluorescent green
-            _red = "\033[31m"
-            _reset = "\033[0m"
-            print("  Test case results:")
-            print("  TC1 (plan request)     : " + (_green + "[OK] PASS" + _reset if tc1_pass else _red + "[FAIL]" + _reset))
-            print("  TC2 (implement request): " + (_green + "[OK] PASS" + _reset if tc2_pass else _red + "[FAIL]" + _reset))
-            print("  TC3 (/p with implementation-style request): " + (_green + "[OK] PASS" + _reset if tc3_pass else _red + "[FAIL]" + _reset))
+            print(_cyan + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset)
+            print("  " + (_green + _check + " PASS" + _reset if tc1_pass else _red + _cross + " FAIL" + _reset) + "  TC1 (plan request)")
+            print("  " + (_green + _check + " PASS" + _reset if tc2_pass else _red + _cross + " FAIL" + _reset) + "  TC2 (implement request)")
+            print("  " + (_green + _check + " PASS" + _reset if tc3_pass else _red + _cross + " FAIL" + _reset) + "  TC3 (/p with implementation-style request)")
             print("")
         else:
             try:
@@ -536,13 +550,16 @@ def run_doctor_ai(args: list[str]) -> None:
             except Exception as e:
                 print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
 
-            _green = "\033[92m"  # bright/fluorescent green
-            _red = "\033[31m"
-            _reset = "\033[0m"
-            print("  Test case results:")
-            print("  TC1 (plan request)     : " + (_green + "[OK] PASS" + _reset if tc1_pass else _red + "[FAIL]" + _reset))
-            print("  TC2 (implement request): " + (_green + "[OK] PASS" + _reset if tc2_pass else _red + "[FAIL]" + _reset))
-            print("  TC3 (/p with implementation-style request): " + (_green + "[OK] PASS" + _reset if tc3_pass else _red + "[FAIL]" + _reset))
+            _cyan2 = "\033[36m"
+            _green2 = "\033[92m"
+            _red2 = "\033[31m"
+            _reset2 = "\033[0m"
+            _check2 = "\u2713"
+            _cross2 = "\u2717"
+            print(_cyan2 + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset2)
+            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc1_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC1 (plan request)")
+            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc2_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC2 (implement request)")
+            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc3_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC3 (/p with implementation-style request)")
             print("")
         if not tc1_pass or not tc2_pass or not tc3_pass:
             exit_code = 1

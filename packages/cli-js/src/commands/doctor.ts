@@ -234,15 +234,19 @@ async function runStreamingDoctorTc(
 
   let response = "";
   let passShown = false;
+  const dim = "\x1b[2m";
+  const reset = "\x1b[0m";
+  const passColor = "\x1b[92m";
+  const failColor = "\x1b[31m";
   const render = (suffix = "") => {
     const normalized = response.replace(/\s+/g, " ").trim();
     readline.clearLine(process.stdout, 0);
     readline.cursorTo(process.stdout, 0);
-    process.stdout.write(`    response: ${normalized}${suffix}`);
+    process.stdout.write(`    ${dim}response:${reset} ${normalized}${suffix}`);
   };
 
-  process.stdout.write(`  ${label}\n`);
-  process.stdout.write("    response: ");
+  process.stdout.write(`  ${"\x1b[36m"}${label}${reset}\n`);
+  process.stdout.write(`    ${dim}response:${reset} `);
 
   try {
     const finalResponse = await runner.streamOneTurn(
@@ -252,7 +256,7 @@ async function runStreamingDoctorTc(
         response += chunk;
         if (!passShown && expectedKeywords.some((keyword) => response.includes(keyword))) {
           passShown = true;
-          render("  [OK] PASS");
+          render(`  ${passColor}\u2713 PASS${reset}`);
           return;
         }
         if (!passShown) {
@@ -263,11 +267,11 @@ async function runStreamingDoctorTc(
     );
     response = finalResponse;
     const passed = expectedKeywords.some((keyword) => response.includes(keyword));
-    render(passed ? "  [OK] PASS" : "  [FAIL]");
+    render(passed ? `  ${passColor}\u2713 PASS${reset}` : `  ${failColor}\u2717 FAIL${reset}`);
     process.stdout.write("\n");
     return { passed, response };
   } catch (err) {
-    render("  [FAIL]");
+    render(`  ${failColor}\u2717 FAIL${reset}`);
     process.stdout.write("\n");
     return {
       passed: false,
@@ -551,7 +555,17 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     throw new Error("Unsupported provider selected for doctor ai");
   }
 
-  console.log("\nRunning workflow tests (planner: " + selectedPlanner.provider + " / " + selectedPlanner.model + ", implementer: " + selectedImplementer.provider + " / " + selectedImplementer.model + ")...\n");
+  const cyan = "\x1b[36m";
+  const dim = "\x1b[2m";
+  const green = "\x1b[92m";
+  const red = "\x1b[31m";
+  const reset = "\x1b[0m";
+  const check = "\u2713";
+  const cross = "\u2717";
+  console.log("");
+  console.log(cyan + "  \u2500\u2500\u2500 Workflow tests \u2500\u2500\u2500" + reset);
+  console.log(dim + "  planner: " + selectedPlanner.provider + " / " + selectedPlanner.model + "  \u00b7  implementer: " + selectedImplementer.provider + " / " + selectedImplementer.model + reset);
+  console.log("");
 
   let tc1Pass = false;
   let tc2Pass = false;
@@ -598,13 +612,10 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     if (tc3.error) {
       console.error("TC3 (/p with implementation-style request) error:", tc3.error);
     }
-    const green = "\x1b[92m"; /* bright/fluorescent green */
-    const red = "\x1b[31m";
-    const reset = "\x1b[0m";
-    console.log("  Test case results:");
-    console.log("  TC1 (plan request)     : " + (tc1Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
-    console.log("  TC2 (implement request): " + (tc2Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
-    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
+    console.log(cyan + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + reset);
+    console.log("  " + (tc1Pass ? green + check + " PASS" + reset : red + cross + " FAIL" + reset) + "  TC1 (plan request)");
+    console.log("  " + (tc2Pass ? green + check + " PASS" + reset : red + cross + " FAIL" + reset) + "  TC2 (implement request)");
+    console.log("  " + (tc3Pass ? green + check + " PASS" + reset : red + cross + " FAIL" + reset) + "  TC3 (/p with implementation-style request)");
     console.log("");
   } else {
     try {
@@ -647,13 +658,16 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
     }
 
-    const green = "\x1b[92m"; /* bright/fluorescent green */
-    const red = "\x1b[31m";
-    const reset = "\x1b[0m";
-    console.log("  Test case results:");
-    console.log("  TC1 (plan request)     : " + (tc1Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
-    console.log("  TC2 (implement request): " + (tc2Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
-    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
+    const _cyan = "\x1b[36m";
+    const _green = "\x1b[92m";
+    const _red = "\x1b[31m";
+    const _reset = "\x1b[0m";
+    const _check = "\u2713";
+    const _cross = "\u2717";
+    console.log(_cyan + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset);
+    console.log("  " + (tc1Pass ? _green + _check + " PASS" + _reset : _red + _cross + " FAIL" + _reset) + "  TC1 (plan request)");
+    console.log("  " + (tc2Pass ? _green + _check + " PASS" + _reset : _red + _cross + " FAIL" + _reset) + "  TC2 (implement request)");
+    console.log("  " + (tc3Pass ? _green + _check + " PASS" + _reset : _red + _cross + " FAIL" + _reset) + "  TC3 (/p with implementation-style request)");
     console.log("");
   }
 
