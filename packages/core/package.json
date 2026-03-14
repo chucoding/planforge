@@ -1,6 +1,6 @@
 {
   "name": "@planforge/core",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "PlanForge shared prompts",
   "license": "MIT",
   "files": ["prompts", "models.json"]
