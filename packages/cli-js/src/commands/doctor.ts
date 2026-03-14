@@ -9,7 +9,6 @@ import {
   getProjectRoot,
   getPlansDir,
   getContextDir,
-  getLegacyContextDir,
   getTemplatesRoot,
 } from "../utils/paths.js";
 import { printCurrentAiConfig, selectFromList } from "../utils/tui.js";
@@ -133,7 +132,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
 
   const hasPlansDir = await fs.pathExists(plansDir);
   checks.push({
-    name: ".planforge/plans",
+    name: ".cursor/plans",
     status: hasPlansDir ? "ok" : "error",
     message: hasPlansDir ? "exists" : "missing (run planforge init)",
   });
@@ -141,21 +140,11 @@ export async function runDoctor(_args: string[]): Promise<void> {
   const contextDirPath = getContextDir(projectRoot);
   const hasContextDir = await fs.pathExists(contextDirPath);
   checks.push({
-    name: ".planforge/contexts",
+    name: ".cursor/contexts",
     status: hasContextDir ? "ok" : "warn",
     message: hasContextDir ? "exists" : "missing (run planforge init)",
   });
 
-  // TODO: 06-13 ??? remove old path warning block
-  const legacyContextDir = getLegacyContextDir(projectRoot);
-  if (await fs.pathExists(legacyContextDir)) {
-    checks.push({
-      name: ".planforge/context",
-      status: "warn",
-      message: "legacy path detected (migrate to .planforge/contexts)",
-    });
-  }
-  // TODO: 06-13 ??? remove old plans layout warning block
   if (hasPlansDir) {
     const entries = await fs.readdir(plansDir, { withFileTypes: true });
     const hasLegacyFlatPlans = entries.some((entry) => entry.isFile() && entry.name.endsWith(".plan.md"));
@@ -163,7 +152,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
       checks.push({
         name: "plans layout",
         status: "warn",
-        message: "legacy flat plan files detected (use YYYY-MM-DD/MMDD-... .plan.md)",
+        message: "flat plan files in plans root (use YYYY-MM-DD/HHMM-slug.plan.md)",
       });
     }
 

@@ -2,7 +2,6 @@
 
 import json
 import re
-import secrets
 from datetime import datetime
 from pathlib import Path
 
@@ -39,10 +38,6 @@ def _slugify_for_filename(text: str) -> str:
     s = re.sub(r"\s+", "-", s)
     s = re.sub(r"-+", "-", s).strip(".- ")[:40]
     return s if _is_slug_valid(s) else ""
-
-
-def _short_hash() -> str:
-    return secrets.token_hex(4)
 
 
 def _extract_title_from_plan_body(plan_body: str) -> str:
@@ -143,13 +138,12 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
         if not _is_slug_valid(slug):
             slug = "plan"
         slug = _limit_slug_hyphens(slug)
-    h = _short_hash()
     now = datetime.now()
     plans_dir = Path(get_plans_dir(project_root))
     dated_plans_dir = Path(get_dated_plans_dir(project_root, now))
     dated_plans_dir.mkdir(parents=True, exist_ok=True)
-    _, mmdd = get_date_parts(now)
-    file_path = dated_plans_dir / f"{mmdd}-{slug}-{h}.plan.md"
+    _, _, hhmm = get_date_parts(now)
+    file_path = dated_plans_dir / f"{hhmm}-{slug}.plan.md"
     file_path.write_text(body_to_write, encoding="utf-8")
     (plans_dir / "index.json").write_text(
         json.dumps({"activePlan": file_path.relative_to(plans_dir).as_posix()}, indent=2),
