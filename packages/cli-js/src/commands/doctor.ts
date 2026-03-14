@@ -17,7 +17,20 @@ import type { PlanForgeConfig } from "../config/types.js";
 import { checkClaude, listModelsClaude } from "../providers/claude.js";
 import { checkCodex, listModelsCodex } from "../providers/codex.js";
 import { getOneTurnRunner } from "../providers/registry.js";
+import { fetchUrlContent } from "../utils/url-fetch.js";
 import { loadModelsCatalog, type ModelsCatalog } from "./model.js";
+
+const URL_TEST_URL = "https://example.com";
+const URL_TEST_TIMEOUT_MS = 5_000;
+
+async function runUrlFetchTc(): Promise<{ passed: boolean; error?: string }> {
+  try {
+    const body = await fetchUrlContent(URL_TEST_URL, URL_TEST_TIMEOUT_MS);
+    return { passed: body.length > 0 };
+  } catch (e) {
+    return { passed: false, error: (e as Error).message };
+  }
+}
 
 type Status = "ok" | "warn" | "error";
 
@@ -238,6 +251,23 @@ async function runStreamingDoctorTc(
   const reset = "\x1b[0m";
   const passColor = "\x1b[92m";
   const failColor = "\x1b[31m";
+  const spinnerFrames = ["|", "/", "-", "\\"];
+  let spinnerInterval: ReturnType<typeof setInterval> | null = null;
+  const startSpinner = () => {
+    let frameIdx = 0;
+    spinnerInterval = setInterval(() => {
+      readline.clearLine(process.stdout, 0);
+      readline.cursorTo(process.stdout, 0);
+      process.stdout.write(`    ${dim}response:${reset} ${spinnerFrames[frameIdx % spinnerFrames.length]}`);
+      frameIdx++;
+    }, 80);
+  };
+  const stopSpinner = () => {
+    if (spinnerInterval !== null) {
+      clearInterval(spinnerInterval);
+      spinnerInterval = null;
+    }
+  };
   const render = (suffix = "") => {
     const normalized = response.replace(/\s+/g, " ").trim();
     readline.clearLine(process.stdout, 0);
@@ -249,10 +279,12 @@ async function runStreamingDoctorTc(
   process.stdout.write(`    ${dim}response:${reset} `);
 
   try {
+    startSpinner();
     const finalResponse = await runner.streamOneTurn(
       systemPrompt,
       userMessage,
       (chunk) => {
+        if (response.length === 0 && chunk.length > 0) stopSpinner();
         response += chunk;
         if (!passShown && expectedKeywords.some((keyword) => response.includes(keyword))) {
           passShown = true;
@@ -265,12 +297,14 @@ async function runStreamingDoctorTc(
       },
       { cwd, model }
     );
+    stopSpinner();
     response = finalResponse;
     const passed = expectedKeywords.some((keyword) => response.includes(keyword));
     render(passed ? `  ${passColor}\u2713 PASS${reset}` : `  ${failColor}\u2717 FAIL${reset}`);
     process.stdout.write("\n");
     return { passed, response };
   } catch (err) {
+    stopSpinner();
     render(`  ${failColor}\u2717 FAIL${reset}`);
     process.stdout.write("\n");
     return {
@@ -570,6 +604,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
   let tc1Pass = false;
   let tc2Pass = false;
   let tc3Pass = false;
+  let tc4Pass = false;
   if (process.stdout.isTTY) {
     const tc1 = await runStreamingDoctorTc(
       "TC1 (plan request)",
@@ -612,10 +647,20 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     if (tc3.error) {
       console.error("TC3 (/p with implementation-style request) error:", tc3.error);
     }
+
+    process.stdout.write("  " + cyan + "TC4 (URL fetch)" + reset + "\n    ");
+    const tc4 = await runUrlFetchTc();
+    tc4Pass = tc4.passed;
+    if (tc4.error) {
+      console.error("TC4 (URL fetch) error:", tc4.error);
+    }
+    console.log(tc4Pass ? green + check + " PASS  " + reset + "GET " + URL_TEST_URL : red + cross + " FAIL  " + reset + "GET " + URL_TEST_URL);
+
     console.log(cyan + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + reset);
     console.log("  " + (tc1Pass ? green + check + " PASS" + reset : red + cross + " FAIL" + reset) + "  TC1 (plan request)");
     console.log("  " + (tc2Pass ? green + check + " PASS" + reset : red + cross + " FAIL" + reset) + "  TC2 (implement request)");
     console.log("  " + (tc3Pass ? green + check + " PASS" + reset : red + cross + " FAIL" + reset) + "  TC3 (/p with implementation-style request)");
+    console.log("  " + (tc4Pass ? green + check + " PASS" + reset : red + cross + " FAIL" + reset) + "  TC4 (URL fetch)");
     console.log("");
   } else {
     try {
@@ -657,6 +702,12 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     } catch (e) {
       console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
     }
+    try {
+      const tc4 = await runUrlFetchTc();
+      tc4Pass = tc4.passed;
+    } catch (e) {
+      console.error("TC4 (URL fetch) error:", (e as Error).message);
+    }
 
     const _cyan = "\x1b[36m";
     const _green = "\x1b[92m";
@@ -668,10 +719,11 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     console.log("  " + (tc1Pass ? _green + _check + " PASS" + _reset : _red + _cross + " FAIL" + _reset) + "  TC1 (plan request)");
     console.log("  " + (tc2Pass ? _green + _check + " PASS" + _reset : _red + _cross + " FAIL" + _reset) + "  TC2 (implement request)");
     console.log("  " + (tc3Pass ? _green + _check + " PASS" + _reset : _red + _cross + " FAIL" + _reset) + "  TC3 (/p with implementation-style request)");
+    console.log("  " + (tc4Pass ? _green + _check + " PASS" + _reset : _red + _cross + " FAIL" + _reset) + "  TC4 (URL fetch)");
     console.log("");
   }
 
-  if (!tc1Pass || !tc2Pass || !tc3Pass) {
+  if (!tc1Pass || !tc2Pass || !tc3Pass || !tc4Pass) {
     exitCode = 1;
   }
   process.exit(exitCode);
