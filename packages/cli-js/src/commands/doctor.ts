@@ -314,54 +314,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
 
   const providerArg = args.includes("--provider") ? args[args.indexOf("--provider") + 1] : undefined;
   const modelArg = args.includes("--model") ? args[args.indexOf("--model") + 1] : undefined;
-  let selected: DoctorAiModelOption;
-  if (providerArg && modelArg) {
-    const match = options.find((o) => o.provider === providerArg && o.model === modelArg);
-    if (!match) {
-      console.error(`No matching option for --provider ${providerArg} --model ${modelArg}`);
-      process.exit(1);
-    }
-    selected = match;
-  } else if (process.stdin.isTTY) {
-    console.log("\n  Current AI config");
-    console.log("  -----------------");
-    const pl = config.planner;
-    const impl = config.implementer;
-    const plExtra = pl.effort != null ? `effort: ${pl.effort}` : pl.reasoning != null ? `reasoning: ${pl.reasoning}` : undefined;
-    const implExtra = impl.effort != null ? `effort: ${impl.effort}` : impl.reasoning != null ? `reasoning: ${impl.reasoning}` : undefined;
-    console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, true));
-    console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
-    console.log("");
-    console.log("  Select AI for workflow test  [Up/Down]  Enter to confirm\n");
-    let index = 0;
-    while (true) {
-      for (let i = 0; i < options.length; i++) {
-        const o = options[i];
-        const rec = o.recommended ? "  (recommended)" : "";
-        console.log((i === index ? "  > " : "    ") + `${o.provider} (${o.model})${rec}`);
-      }
-      const key = await waitKey();
-      if (key === "quit") process.exit(0);
-      if (key === "enter") break;
-      if (key === "up") index = (index - 1 + options.length) % options.length;
-      if (key === "down") index = (index + 1) % options.length;
-      process.stdout.write(`\x1b[${options.length}A\x1b[0J`);
-    }
-    selected = options[index];
-  } else {
-    selected = options[0];
-  }
-
-  const workflowContent = loadWorkflowMdc(projectRoot);
-  const systemPrompt =
-    workflowContent +
-    "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything.";
-
-  const completeOneTurn =
-    selected.provider === "claude" ? claudeCompleteOneTurn : codexCompleteOneTurn;
-  const opts = { cwd: projectRoot, model: selected.model };
-
-  console.log("\nRunning workflow tests with " + selected.provider + " (" + selected.model + ")...\n");
+  const isInteractive = process.stdin.isTTY && !providerArg && !modelArg;
 
   const promptsPath = resolve(getTemplatesRoot(), "doctor-ai", "prompts.json");
   if (!fs.existsSync(promptsPath)) {
@@ -380,51 +333,106 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     throw new Error(`Missing or invalid template: ${promptsPath}. Run from repo root or ensure templates exist.`);
   }
 
-  let tc1Pass = false;
-  let tc2Pass = false;
-  let tc3Pass = false;
-  try {
-    const tc1Response = await completeOneTurn(
-      systemPrompt,
-      promptsData.tc1PlanRequest,
-      opts
-    );
-    tc1Pass =
-      tc1Response.includes("planforge plan") ||
-      tc1Response.includes("run_plan.sh");
-  } catch (e) {
-    console.error("TC1 (plan request) error:", (e as Error).message);
-  }
-  try {
-    const tc2Response = await completeOneTurn(
-      systemPrompt,
-      promptsData.tc2ImplementRequest,
-      opts
-    );
-    tc2Pass =
-      tc2Response.includes("planforge implement") ||
-      tc2Response.includes("run_implement.sh");
-  } catch (e) {
-    console.error("TC2 (implement request) error:", (e as Error).message);
-  }
-  try {
-    const tc3Response = await completeOneTurn(
-      systemPrompt,
-      promptsData.tc3SlashPWithImplementationStyleContent,
-      opts
-    );
-    tc3Pass =
-      tc3Response.includes("planforge plan") ||
-      tc3Response.includes("run_plan.sh");
-  } catch (e) {
-    console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
-  }
+  const workflowContent = loadWorkflowMdc(projectRoot);
+  const systemPrompt =
+    workflowContent +
+    "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything.";
 
-  console.log("  TC1 (plan request)     : " + (tc1Pass ? "[OK] pass" : "[FAIL]"));
-  console.log("  TC2 (implement request): " + (tc2Pass ? "[OK] pass" : "[FAIL]"));
-  console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? "[OK] pass" : "[FAIL]"));
-  console.log("");
-  if (!tc1Pass || !tc2Pass || !tc3Pass) {
-    process.exit(1);
+  let exitCode = 0;
+  for (;;) {
+    let selected: DoctorAiModelOption;
+    if (providerArg && modelArg) {
+      const match = options.find((o) => o.provider === providerArg && o.model === modelArg);
+      if (!match) {
+        console.error(`No matching option for --provider ${providerArg} --model ${modelArg}`);
+        process.exit(1);
+      }
+      selected = match;
+    } else if (process.stdin.isTTY) {
+      console.log("\n  Current AI config");
+      console.log("  -----------------");
+      const pl = config.planner;
+      const impl = config.implementer;
+      const plExtra = pl.effort != null ? `effort: ${pl.effort}` : pl.reasoning != null ? `reasoning: ${pl.reasoning}` : undefined;
+      const implExtra = impl.effort != null ? `effort: ${impl.effort}` : impl.reasoning != null ? `reasoning: ${impl.reasoning}` : undefined;
+      console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, true));
+      console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
+      console.log("");
+      console.log("  Select AI for workflow test  [Up/Down]  Enter to confirm\n");
+      let index = 0;
+      while (true) {
+        for (let i = 0; i < options.length; i++) {
+          const o = options[i];
+          const rec = o.recommended ? "  (recommended)" : "";
+          console.log((i === index ? "  > " : "    ") + `${o.provider} (${o.model})${rec}`);
+        }
+        const key = await waitKey();
+        if (key === "quit") process.exit(exitCode);
+        if (key === "enter") break;
+        if (key === "up") index = (index - 1 + options.length) % options.length;
+        if (key === "down") index = (index + 1) % options.length;
+        process.stdout.write(`\x1b[${options.length}A\x1b[0J`);
+      }
+      selected = options[index];
+    } else {
+      selected = options[0];
+    }
+
+    const completeOneTurn =
+      selected.provider === "claude" ? claudeCompleteOneTurn : codexCompleteOneTurn;
+    const opts = { cwd: projectRoot, model: selected.model };
+
+    console.log("\nRunning workflow tests with " + selected.provider + " (" + selected.model + ")...\n");
+
+    let tc1Pass = false;
+    let tc2Pass = false;
+    let tc3Pass = false;
+    try {
+      const tc1Response = await completeOneTurn(
+        systemPrompt,
+        promptsData.tc1PlanRequest,
+        opts
+      );
+      tc1Pass =
+        tc1Response.includes("planforge plan") ||
+        tc1Response.includes("run_plan.sh");
+    } catch (e) {
+      console.error("TC1 (plan request) error:", (e as Error).message);
+    }
+    try {
+      const tc2Response = await completeOneTurn(
+        systemPrompt,
+        promptsData.tc2ImplementRequest,
+        opts
+      );
+      tc2Pass =
+        tc2Response.includes("planforge implement") ||
+        tc2Response.includes("run_implement.sh");
+    } catch (e) {
+      console.error("TC2 (implement request) error:", (e as Error).message);
+    }
+    try {
+      const tc3Response = await completeOneTurn(
+        systemPrompt,
+        promptsData.tc3SlashPWithImplementationStyleContent,
+        opts
+      );
+      tc3Pass =
+        tc3Response.includes("planforge plan") ||
+        tc3Response.includes("run_plan.sh");
+    } catch (e) {
+      console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
+    }
+
+    console.log("  TC1 (plan request)     : " + (tc1Pass ? "[OK] pass" : "[FAIL]"));
+    console.log("  TC2 (implement request): " + (tc2Pass ? "[OK] pass" : "[FAIL]"));
+    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? "[OK] pass" : "[FAIL]"));
+    console.log("");
+    if (!tc1Pass || !tc2Pass || !tc3Pass) {
+      exitCode = 1;
+    }
+    if (!isInteractive) {
+      process.exit(exitCode);
+    }
   }
 }

@@ -250,55 +250,6 @@ def run_doctor_ai(args: list[str]) -> None:
         if a == "--model" and i + 1 < len(args):
             model_arg = args[i + 1]
 
-    if provider_arg and model_arg:
-        match = next((o for o in options if o[0] == provider_arg and o[1] == model_arg), None)
-        if not match:
-            print(f"No matching option for --provider {provider_arg} --model {model_arg}", file=sys.stderr)
-            raise SystemExit(1)
-        selected = (match[0], match[1])
-    elif sys.stdin.isatty():
-        pl = config.planner
-        impl = config.implementer
-        pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
-        impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
-        print("\n  Current AI config")
-        print("  -----------------")
-        print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}  (recommended)")
-        print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
-        print("")
-        print("  Select AI for workflow test  [Up/Down]  Enter to confirm\n")
-        index = 0
-        while True:
-            for i, (prov, model, rec) in enumerate(options):
-                rec_str = "  (recommended)" if rec else ""
-                prefix = "  > " if i == index else "    "
-                print(f"{prefix}{prov} ({model}){rec_str}")
-            key = wait_key()
-            if key == "quit":
-                raise SystemExit(0)
-            if key == "enter":
-                break
-            if key == "up":
-                index = (index - 1) % len(options)
-            elif key == "down":
-                index = (index + 1) % len(options)
-            sys.stdout.write(f"\033[{len(options)}A\033[0J")
-            sys.stdout.flush()
-        selected = (options[index][0], options[index][1])
-    else:
-        selected = (options[0][0], options[0][1])
-
-    workflow_content = _load_workflow_mdc(project_root)
-    system_prompt = (
-        workflow_content
-        + "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything."
-    )
-
-    complete_one_turn = claude_complete_one_turn if selected[0] == "claude" else codex_complete_one_turn
-    opts = {"cwd": project_root, "model": selected[1]}
-
-    print("\nRunning workflow tests with " + selected[0] + " (" + selected[1] + ")...\n")
-
     prompts_path = Path(get_templates_root()) / "doctor-ai" / "prompts.json"
     if not prompts_path.exists():
         raise FileNotFoundError(
@@ -316,28 +267,82 @@ def run_doctor_ai(args: list[str]) -> None:
             f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
         ) from e
 
-    tc1_pass = False
-    tc2_pass = False
-    tc3_pass = False
-    try:
-        tc1_response = complete_one_turn(system_prompt, tc1_msg, **opts)
-        tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
-    except Exception as e:
-        print("TC1 (plan request) error:", e, file=sys.stderr)
-    try:
-        tc2_response = complete_one_turn(system_prompt, tc2_msg, **opts)
-        tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
-    except Exception as e:
-        print("TC2 (implement request) error:", e, file=sys.stderr)
-    try:
-        tc3_response = complete_one_turn(system_prompt, tc3_msg, **opts)
-        tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
-    except Exception as e:
-        print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
+    workflow_content = _load_workflow_mdc(project_root)
+    system_prompt = (
+        workflow_content
+        + "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything."
+    )
 
-    print("  TC1 (plan request)     : " + ("[OK] pass" if tc1_pass else "[FAIL]"))
-    print("  TC2 (implement request): " + ("[OK] pass" if tc2_pass else "[FAIL]"))
-    print("  TC3 (/p with implementation-style request): " + ("[OK] pass" if tc3_pass else "[FAIL]"))
-    print("")
-    if not tc1_pass or not tc2_pass or not tc3_pass:
-        raise SystemExit(1)
+    is_interactive = sys.stdin.isatty() and not (provider_arg and model_arg)
+    exit_code = 0
+    while True:
+        if provider_arg and model_arg:
+            match = next((o for o in options if o[0] == provider_arg and o[1] == model_arg), None)
+            if not match:
+                print(f"No matching option for --provider {provider_arg} --model {model_arg}", file=sys.stderr)
+                raise SystemExit(1)
+            selected = (match[0], match[1])
+        elif sys.stdin.isatty():
+            pl = config.planner
+            impl = config.implementer
+            pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
+            impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
+            print("\n  Current AI config")
+            print("  -----------------")
+            print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}  (recommended)")
+            print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
+            print("")
+            print("  Select AI for workflow test  [Up/Down]  Enter to confirm\n")
+            index = 0
+            while True:
+                for i, (prov, model, rec) in enumerate(options):
+                    rec_str = "  (recommended)" if rec else ""
+                    prefix = "  > " if i == index else "    "
+                    print(f"{prefix}{prov} ({model}){rec_str}")
+                key = wait_key()
+                if key == "quit":
+                    raise SystemExit(exit_code)
+                if key == "enter":
+                    break
+                if key == "up":
+                    index = (index - 1) % len(options)
+                elif key == "down":
+                    index = (index + 1) % len(options)
+                sys.stdout.write("\033[%dA\033[0J" % len(options))
+                sys.stdout.flush()
+            selected = (options[index][0], options[index][1])
+        else:
+            selected = (options[0][0], options[0][1])
+
+        complete_one_turn = claude_complete_one_turn if selected[0] == "claude" else codex_complete_one_turn
+        opts = {"cwd": project_root, "model": selected[1]}
+
+        print("\nRunning workflow tests with " + selected[0] + " (" + selected[1] + ")...\n")
+
+        tc1_pass = False
+        tc2_pass = False
+        tc3_pass = False
+        try:
+            tc1_response = complete_one_turn(system_prompt, tc1_msg, **opts)
+            tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
+        except Exception as e:
+            print("TC1 (plan request) error:", e, file=sys.stderr)
+        try:
+            tc2_response = complete_one_turn(system_prompt, tc2_msg, **opts)
+            tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
+        except Exception as e:
+            print("TC2 (implement request) error:", e, file=sys.stderr)
+        try:
+            tc3_response = complete_one_turn(system_prompt, tc3_msg, **opts)
+            tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
+        except Exception as e:
+            print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
+
+        print("  TC1 (plan request)     : " + ("[OK] pass" if tc1_pass else "[FAIL]"))
+        print("  TC2 (implement request): " + ("[OK] pass" if tc2_pass else "[FAIL]"))
+        print("  TC3 (/p with implementation-style request): " + ("[OK] pass" if tc3_pass else "[FAIL]"))
+        print("")
+        if not tc1_pass or not tc2_pass or not tc3_pass:
+            exit_code = 1
+        if not is_interactive:
+            raise SystemExit(exit_code)
