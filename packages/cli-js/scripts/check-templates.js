@@ -14,7 +14,7 @@ const required = [
   "config/default-both.json",
   "config/default-claude-only.json",
   "config/default-codex-only.json",
-  "doctor-ai/prompts.json",
+  "doctor/prompts.json",
   "cursor/rules/workflow.mdc",
 ];
 

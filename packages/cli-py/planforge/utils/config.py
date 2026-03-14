@@ -38,7 +38,7 @@ def get_default_config(has_claude: bool, has_codex: bool) -> dict:
 
 
 def get_default_doctor_ai_config(has_claude: bool, has_codex: bool) -> dict:
-    """Default Doctor AI config (cheap models for workflow tests). Reads templates/doctor-ai/default-*.json."""
+    """Default Doctor AI config (cheap models for workflow tests). Reads templates/doctor/default-*.json."""
     if has_claude and has_codex:
         filename = "default-both.json"
     elif has_claude:
@@ -48,10 +48,10 @@ def get_default_doctor_ai_config(has_claude: bool, has_codex: bool) -> dict:
     else:
         filename = "default-claude-only.json"
 
-    template_path = Path(get_templates_root()) / "doctor-ai" / filename
+    template_path = Path(get_templates_root()) / "doctor" / filename
     if not template_path.exists():
         raise FileNotFoundError(
-            f"Missing doctor-ai template: {template_path}. Run from repo root or ensure templates exist."
+            f"Missing doctor template: {template_path}. Run from repo root or ensure templates exist."
         )
     try:
         return json.loads(template_path.read_text(encoding="utf-8"))

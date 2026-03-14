@@ -433,7 +433,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
   const isInteractive = process.stdin.isTTY && !providerArg && !modelArg;
   const usePlannerImplementerSelection = isInteractive && catalog !== null;
 
-  const promptsPath = resolve(getTemplatesRoot(), "doctor-ai", "prompts.json");
+  const promptsPath = resolve(getTemplatesRoot(), "doctor", "prompts.json");
   if (!fs.existsSync(promptsPath)) {
     throw new Error(`Missing or invalid template: ${promptsPath}. Run from repo root or ensure templates exist.`);
   }
