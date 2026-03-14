@@ -170,6 +170,18 @@ export async function runDoctor(_args: string[]): Promise<void> {
     message: hasContextDir ? "exists" : "missing (run planforge init)",
   });
 
+  const rulesDir = resolve(projectRoot, ".cursor", "rules");
+  const planforgeRuleFiles = ["planforge-workflow.mdc", "planforge-cursor-agent-terminal.mdc"];
+  for (const ruleFile of planforgeRuleFiles) {
+    const rulePath = resolve(rulesDir, ruleFile);
+    const hasRule = await fs.pathExists(rulePath);
+    checks.push({
+      name: `.cursor/rules/${ruleFile}`,
+      status: hasRule ? "ok" : "warn",
+      message: hasRule ? "exists" : "missing (run planforge install)",
+    });
+  }
+
   if (hasPlansDir) {
     const entries = await fs.readdir(plansDir, { withFileTypes: true });
     const hasLegacyFlatPlans = entries.some((entry) => entry.isFile() && entry.name.endsWith(".plan.md"));
