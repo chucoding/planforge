@@ -56,7 +56,7 @@ def _run_streaming_doctor_tc(
         response += chunk
         if not pass_shown and any(keyword in response for keyword in expected_keywords):
             pass_shown = True
-            render("  [OK] pass")
+            render("  [OK] PASS")
             return
         if not pass_shown:
             render()
@@ -71,7 +71,7 @@ def _run_streaming_doctor_tc(
         )
         response = final_response
         passed = any(keyword in response for keyword in expected_keywords)
-        render("  [OK] pass" if passed else "  [FAIL]")
+        render("  [OK] PASS" if passed else "  [FAIL]")
         print("")
         return passed, None
     except Exception as e:
@@ -511,13 +511,13 @@ def run_doctor_ai(args: list[str]) -> None:
             )
             if tc3_error:
                 print("TC3 (/p with implementation-style request) error:", tc3_error, file=sys.stderr)
-            _green = "\033[32m"
+            _green = "\033[92m"  # bright/fluorescent green
             _red = "\033[31m"
             _reset = "\033[0m"
             print("  Test case results:")
-            print("  TC1 (plan request)     : " + (_green + "[OK] pass" + _reset if tc1_pass else _red + "[FAIL]" + _reset))
-            print("  TC2 (implement request): " + (_green + "[OK] pass" + _reset if tc2_pass else _red + "[FAIL]" + _reset))
-            print("  TC3 (/p with implementation-style request): " + (_green + "[OK] pass" + _reset if tc3_pass else _red + "[FAIL]" + _reset))
+            print("  TC1 (plan request)     : " + (_green + "[OK] PASS" + _reset if tc1_pass else _red + "[FAIL]" + _reset))
+            print("  TC2 (implement request): " + (_green + "[OK] PASS" + _reset if tc2_pass else _red + "[FAIL]" + _reset))
+            print("  TC3 (/p with implementation-style request): " + (_green + "[OK] PASS" + _reset if tc3_pass else _red + "[FAIL]" + _reset))
             print("")
         else:
             try:
@@ -536,13 +536,13 @@ def run_doctor_ai(args: list[str]) -> None:
             except Exception as e:
                 print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
 
-            _green = "\033[32m"
+            _green = "\033[92m"  # bright/fluorescent green
             _red = "\033[31m"
             _reset = "\033[0m"
             print("  Test case results:")
-            print("  TC1 (plan request)     : " + (_green + "[OK] pass" + _reset if tc1_pass else _red + "[FAIL]" + _reset))
-            print("  TC2 (implement request): " + (_green + "[OK] pass" + _reset if tc2_pass else _red + "[FAIL]" + _reset))
-            print("  TC3 (/p with implementation-style request): " + (_green + "[OK] pass" + _reset if tc3_pass else _red + "[FAIL]" + _reset))
+            print("  TC1 (plan request)     : " + (_green + "[OK] PASS" + _reset if tc1_pass else _red + "[FAIL]" + _reset))
+            print("  TC2 (implement request): " + (_green + "[OK] PASS" + _reset if tc2_pass else _red + "[FAIL]" + _reset))
+            print("  TC3 (/p with implementation-style request): " + (_green + "[OK] PASS" + _reset if tc3_pass else _red + "[FAIL]" + _reset))
             print("")
         if not tc1_pass or not tc2_pass or not tc3_pass:
             exit_code = 1

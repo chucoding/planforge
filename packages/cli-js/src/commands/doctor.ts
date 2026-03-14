@@ -252,7 +252,7 @@ async function runStreamingDoctorTc(
         response += chunk;
         if (!passShown && expectedKeywords.some((keyword) => response.includes(keyword))) {
           passShown = true;
-          render("  [OK] pass");
+          render("  [OK] PASS");
           return;
         }
         if (!passShown) {
@@ -263,7 +263,7 @@ async function runStreamingDoctorTc(
     );
     response = finalResponse;
     const passed = expectedKeywords.some((keyword) => response.includes(keyword));
-    render(passed ? "  [OK] pass" : "  [FAIL]");
+    render(passed ? "  [OK] PASS" : "  [FAIL]");
     process.stdout.write("\n");
     return { passed, response };
   } catch (err) {
@@ -598,13 +598,13 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     if (tc3.error) {
       console.error("TC3 (/p with implementation-style request) error:", tc3.error);
     }
-    const green = "\x1b[32m";
+    const green = "\x1b[92m"; /* bright/fluorescent green */
     const red = "\x1b[31m";
     const reset = "\x1b[0m";
     console.log("  Test case results:");
-    console.log("  TC1 (plan request)     : " + (tc1Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
-    console.log("  TC2 (implement request): " + (tc2Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
-    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
+    console.log("  TC1 (plan request)     : " + (tc1Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
+    console.log("  TC2 (implement request): " + (tc2Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
+    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
     console.log("");
   } else {
     try {
@@ -647,13 +647,13 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
     }
 
-    const green = "\x1b[32m";
+    const green = "\x1b[92m"; /* bright/fluorescent green */
     const red = "\x1b[31m";
     const reset = "\x1b[0m";
     console.log("  Test case results:");
-    console.log("  TC1 (plan request)     : " + (tc1Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
-    console.log("  TC2 (implement request): " + (tc2Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
-    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
+    console.log("  TC1 (plan request)     : " + (tc1Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
+    console.log("  TC2 (implement request): " + (tc2Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
+    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? green + "[OK] PASS" + reset : red + "[FAIL]" + reset));
     console.log("");
   }
 
