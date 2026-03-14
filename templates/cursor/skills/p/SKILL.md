@@ -11,7 +11,7 @@ You must execute the PlanForge command path for every `/p` request. Do not draft
 
 **When the user invokes /p with a goal (e.g. "/p design a tetris game"):**
 
-0. **URL 선행 로딩 (if goal contains URLs)** - If the goal contains any URLs (match `https?://[^\s]+`, including notion.so / notion.site):
+0. **Pre-fetch URLs (if goal contains URLs)** - If the goal contains any URLs (match `https?://[^\s]+`, including notion.so / notion.site):
    - For each URL: use MCP tool **notion-fetch** (server `user-Notion`) with `{ "id": "<url>" }` for Notion URLs; use **mcp_web_fetch** for other web URLs. Skip failed URLs; combine successful results into one markdown (e.g. `## <URL>\n\n<content>` per URL). Keep this content for step 1.
 
 1. **Context file (one file: chat history + optional URL content)** - Derive a **slug** from the goal using the same rules as the plan command: lowercase ASCII letters, digits, hyphens only; at most 2 hyphens; English-only (e.g. `add-login`, `make-tetris`). Write **one** markdown file to the project's **context directory** (`.cursor/contexts`) under a dated subdirectory `YYYY-MM-DD` with filename `HHMM-<slug>.md` (use current time for HHMM). Do **not** over-summarize the conversation; use this format only:
@@ -23,7 +23,7 @@ You must execute the PlanForge command path for every `/p` request. Do not draft
    Agent : {Answer2}
    ...
 
-   위 대화를 참고하여 사용자의 의도를 파악하고 플랜을 세우는데 참고한다.
+   Use this conversation to understand the user's intent and as reference when creating the plan.
    ```
    If you fetched URL content in step 0, append it as a separate section (e.g. `## Fetched URLs` or per-URL headings) in the **same** file. Create the dated subdirectory if it does not exist.
 
