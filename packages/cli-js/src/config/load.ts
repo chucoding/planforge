@@ -41,6 +41,31 @@ export function getDefaultConfig(hasClaude: boolean, hasCodex: boolean): PlanFor
 }
 
 /**
+ * Default Doctor AI config (cheap models for workflow tests). Reads from templates/doctor-ai/default-*.json.
+ * Same file naming as config: default-both, default-claude-only, default-codex-only.
+ */
+export function getDefaultDoctorAiConfig(hasClaude: boolean, hasCodex: boolean): PlanForgeConfig {
+  const fileName =
+    hasClaude && hasCodex
+      ? "default-both.json"
+      : hasClaude
+        ? "default-claude-only.json"
+        : hasCodex
+          ? "default-codex-only.json"
+          : "default-claude-only.json";
+  const filePath = resolve(getTemplatesRoot(), "doctor-ai", fileName);
+  if (!existsSync(filePath)) {
+    throw new Error(`Missing doctor-ai template: ${filePath}. Run from repo root or ensure templates exist.`);
+  }
+  try {
+    const data = JSON.parse(readFileSync(filePath, "utf-8")) as PlanForgeConfig;
+    return data;
+  } catch (e) {
+    throw new Error(`Missing or invalid template: ${filePath}. Run from repo root or ensure templates exist.`);
+  }
+}
+
+/**
  * Load planforge.json for runtime commands (plan, implement, doctor). No template fallback.
  * Throws if planforge.json is missing; caller should direct user to planforge init.
  */

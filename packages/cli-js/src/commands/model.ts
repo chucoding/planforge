@@ -6,7 +6,7 @@ import { existsSync } from "fs";
 import fs from "fs-extra";
 import { resolve } from "path";
 import { getProjectRoot, getModelsJsonPath } from "../utils/paths.js";
-import { waitKey } from "../utils/tui.js";
+import { waitKey, printCurrentAiConfig } from "../utils/tui.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
 import { getDefaultConfig } from "../config/load.js";
@@ -47,20 +47,24 @@ export async function runModelTui(
 ): Promise<{ mode: string; config: Record<string, string> } | null> {
   const { modes, modeProviders, providers } = catalog;
 
-  // Step 1: mode
+  // Step 1: mode (with Quit option)
+  const modeOptions = [...modes, "Quit"];
   let modeIndex = 0;
   console.log("\n  Mode: [Up/Down]  Enter to confirm\n");
   while (true) {
-    for (let i = 0; i < modes.length; i++) {
-      console.log((i === modeIndex ? "  > " : "    ") + modes[i]);
+    for (let i = 0; i < modeOptions.length; i++) {
+      console.log((i === modeIndex ? "  > " : "    ") + modeOptions[i]);
     }
     const key = await waitKey();
     if (key === "quit") return null;
-    if (key === "enter") break;
-    if (key === "up") modeIndex = (modeIndex - 1 + modes.length) % modes.length;
-    if (key === "down") modeIndex = (modeIndex + 1) % modes.length;
+    if (key === "enter") {
+      if (modeIndex === modeOptions.length - 1) return null; // Quit
+      break;
+    }
+    if (key === "up") modeIndex = (modeIndex - 1 + modeOptions.length) % modeOptions.length;
+    if (key === "down") modeIndex = (modeIndex + 1) % modeOptions.length;
     if (key === "up" || key === "down") {
-      process.stdout.write(`\x1b[${modes.length}A\x1b[0J`);
+      process.stdout.write(`\x1b[${modeOptions.length}A\x1b[0J`);
     }
   }
   const mode = modes[modeIndex];
@@ -130,29 +134,33 @@ export async function runModelTui(
     process.stdout.write(`\x1b[${models.length}A\x1b[0J`);
   }
 
-  // Step 3b: Effort (Claude) or Reasoning (Codex) selection (Up/Down, Enter to confirm)
-  const opts = isClaude ? effortOpts : reasoningOpts;
+  // Step 3b: Effort (Claude, only if model supports it) or Reasoning (Codex) selection
+  const selectedModel = models[modelIndex] as { id: string; label: string; effort?: boolean };
+  const claudeSupportsEffort = isClaude && selectedModel.effort !== false;
+  const opts = isClaude ? (claudeSupportsEffort ? effortOpts : []) : reasoningOpts;
   const label = isClaude ? "Effort" : "Reasoning";
   let optIndex = Math.min(1, opts.length - 1);
-  console.log(`\n  [Up/Down] ${label}  Enter to confirm\n`);
-  while (true) {
-    for (let i = 0; i < opts.length; i++) {
-      console.log((i === optIndex ? "  > " : "    ") + opts[i]);
+  if (opts.length > 0) {
+    console.log(`\n  [Up/Down] ${label}  Enter to confirm\n`);
+    while (true) {
+      for (let i = 0; i < opts.length; i++) {
+        console.log((i === optIndex ? "  > " : "    ") + opts[i]);
+      }
+      const key = await waitKey();
+      if (key === "quit") return null;
+      if (key === "enter") break;
+      if (key === "up") optIndex = (optIndex - 1 + opts.length) % opts.length;
+      if (key === "down") optIndex = (optIndex + 1) % opts.length;
+      process.stdout.write(`\x1b[${opts.length}A\x1b[0J`);
     }
-    const key = await waitKey();
-    if (key === "quit") return null;
-    if (key === "enter") break;
-    if (key === "up") optIndex = (optIndex - 1 + opts.length) % opts.length;
-    if (key === "down") optIndex = (optIndex + 1) % opts.length;
-    process.stdout.write(`\x1b[${opts.length}A\x1b[0J`);
   }
 
   const config: Record<string, string> = {
     provider: providerId,
     model: models[modelIndex].id,
   };
-  if (isClaude) config.effort = effortOpts[optIndex];
-  else config.reasoning = reasoningOpts[optIndex];
+  if (isClaude && claudeSupportsEffort) config.effort = effortOpts[optIndex];
+  else if (!isClaude) config.reasoning = reasoningOpts[optIndex];
   return { mode, config };
 }
 
@@ -180,6 +188,15 @@ export async function runModel(_args: string[]): Promise<void> {
   if (!process.stdin.isTTY) {
     console.error("planforge model requires an interactive terminal.");
     process.exit(1);
+  }
+
+  if (await fs.pathExists(configPath)) {
+    try {
+      const data = (await fs.readJson(configPath)) as PlanForgeConfig;
+      printCurrentAiConfig(data);
+    } catch {
+      // ignore; do not block model TUI
+    }
   }
 
   const selected = await runModelTui(catalog, hasClaude, hasCodex, defaultConfig);

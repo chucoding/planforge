@@ -32,3 +32,26 @@ def wait_key() -> str | None:
     except KeyboardInterrupt:
         return "quit"
     return _normalize_key(key)
+
+
+def _format_role_line(role: str, role_config: dict) -> str:
+    """Format a single role line for Current AI config display."""
+    provider = role_config.get("provider", "")
+    model = role_config.get("model", "")
+    extra = ""
+    if role_config.get("effort") is not None:
+        extra = f" (effort: {role_config['effort']})"
+    elif role_config.get("reasoning") is not None:
+        extra = f" (reasoning: {role_config['reasoning']})"
+    return f"  {role.ljust(12)}: {provider.ljust(6)} / {model.ljust(20)}{extra}"
+
+
+def print_current_ai_config(
+    config: dict,
+    heading: str = "Current AI config",
+) -> None:
+    """Print planner/implementer config block (e.g. at start of planforge model)."""
+    print(f"\n  {heading}")
+    print(f"  {'-' * len(heading)}")
+    print(_format_role_line("planner", config.get("planner", {})))
+    print(_format_role_line("implementer", config.get("implementer", {})))

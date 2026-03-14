@@ -12,8 +12,8 @@ import {
   getLegacyContextDir,
   getTemplatesRoot,
 } from "../utils/paths.js";
-import { waitKey } from "../utils/tui.js";
-import { loadConfig } from "../config/load.js";
+import { printCurrentAiConfig, selectFromList } from "../utils/tui.js";
+import { loadConfig, getDefaultDoctorAiConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
 import { checkClaude, listModelsClaude } from "../providers/claude.js";
 import { checkCodex, listModelsCodex } from "../providers/codex.js";
@@ -50,45 +50,34 @@ function isDatedPlanFileName(name: string): boolean {
 const DOCTOR_MODE_STATIC = "static";
 const DOCTOR_MODE_AI = "ai";
 
-/** When doctor is run without subcommand: TTY shows mode selection (static/ai) with descriptions; non-TTY runs static. */
+/** When doctor is run without subcommand: TTY shows Doctor AI config (default) then mode selection (static/ai/Quit); non-TTY runs static. */
 export async function runDoctorModeSelect(): Promise<void> {
   if (!process.stdin.isTTY) {
     await runDoctor([]);
     return;
   }
-  const modes: { id: string; label: string; description: string }[] = [
-    { id: DOCTOR_MODE_STATIC, label: "static", description: "Check environment and providers" },
-    { id: DOCTOR_MODE_AI, label: "ai", description: "Run workflow tests with AI" },
-  ];
-  const totalRows = modes.length + 1; // +1 Quit
-  let index = 0;
-  console.log("\n  Mode  [Up/Down]  Enter to confirm\n");
-  while (true) {
-    for (let i = 0; i < modes.length; i++) {
-      const m = modes[i];
-      const prefix = i === index ? "  > " : "    ";
-      console.log(prefix + m.label + "  –  " + m.description);
-    }
-    console.log((index === modes.length ? "  > " : "    ") + "Quit");
-    const key = await waitKey();
-    if (key === "quit") process.exit(0);
-    if (key === "enter") {
-      if (index === modes.length) process.exit(0);
-      const chosen = modes[index].id;
-      if (chosen === DOCTOR_MODE_STATIC) {
-        await runDoctor([]);
-        return;
-      }
-      if (chosen === DOCTOR_MODE_AI) {
-        await runDoctorAi([]);
-        return;
-      }
-      return;
-    }
-    if (key === "up") index = (index - 1 + totalRows) % totalRows;
-    if (key === "down") index = (index + 1) % totalRows;
-    process.stdout.write(`\x1b[${totalRows}A\x1b[0J`);
+  const hasClaude = checkClaude();
+  const hasCodex = checkCodex();
+  try {
+    const doctorAiConfig = getDefaultDoctorAiConfig(hasClaude, hasCodex);
+    printCurrentAiConfig(doctorAiConfig, "Doctor AI config (default)");
+  } catch {
+    // skip config block if templates missing
   }
+  const chosen = await selectFromList(
+    [
+      { label: "static  ?? Check environment and providers", value: DOCTOR_MODE_STATIC },
+      { label: "ai  ?? Run workflow tests with AI", value: DOCTOR_MODE_AI },
+      { label: "Quit", value: "quit" as const },
+    ],
+    "Mode  [Up/Down]  Enter to confirm"
+  );
+  if (chosen === null || chosen === "quit") process.exit(0);
+  if (chosen === DOCTOR_MODE_STATIC) {
+    await runDoctor([]);
+    return;
+  }
+  await runDoctorAi([]);
 }
 
 export async function runDoctor(_args: string[]): Promise<void> {
@@ -158,7 +147,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
     message: hasContextDir ? "exists" : "missing (run planforge init)",
   });
 
-  // TODO: 06-13에 제거 (레거시 경로/플랫 플랜 경고 블록)
+  // TODO: 06-13 ??? remove old path warning block
   const legacyContextDir = getLegacyContextDir(projectRoot);
   if (await fs.pathExists(legacyContextDir)) {
     checks.push({
@@ -167,7 +156,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
       message: "legacy path detected (migrate to .planforge/contexts)",
     });
   }
-  // TODO: 06-13에 제거 (위 레거시 블록과 함께)
+  // TODO: 06-13 ??? remove old plans layout warning block
   if (hasPlansDir) {
     const entries = await fs.readdir(plansDir, { withFileTypes: true });
     const hasLegacyFlatPlans = entries.some((entry) => entry.isFile() && entry.name.endsWith(".plan.md"));
@@ -353,21 +342,14 @@ function buildOptionsFromCatalog(catalog: ModelsCatalog, hasClaude: boolean, has
   return options;
 }
 
-function formatRoleLine(role: string, provider: string, model: string, extra?: string, recommended?: boolean): string {
-  const rec = recommended ? "  (recommended)" : "";
-  const ext = extra != null && extra !== "" ? ` (${extra})` : "";
-  return `  ${role.padEnd(12)}: ${provider.padEnd(6)} / ${model.padEnd(20)}${ext}${rec}`;
-}
-
 /**
- * Interactive: select provider then model (last model = recommended). Returns { provider, model } or null if Quit.
+ * Interactive: select provider then model (last model = recommended). Returns { provider, model } or null if canceled.
  */
 async function selectProviderAndModel(
   catalog: ModelsCatalog,
   hasClaude: boolean,
   hasCodex: boolean,
-  roleLabel: string,
-  exitCode: number
+  roleLabel: string
 ): Promise<{ provider: string; model: string } | null> {
   const providerIds = Object.keys(catalog.providers).filter(
     (p) => (p === "claude" && hasClaude) || (p === "codex" && hasCodex)
@@ -375,48 +357,28 @@ async function selectProviderAndModel(
   if (providerIds.length === 0) return null;
 
   for (;;) {
-    const provList = providerIds.map((id) => catalog.providers[id]?.name ?? id);
-    const totalProv = provList.length + 1; // +1 Quit
-    let pi = 0;
-    console.log(`\n  Select ${roleLabel}  [Up/Down]  Enter to confirm\n`);
-    while (true) {
-      for (let i = 0; i < provList.length; i++) {
-        console.log((i === pi ? "  > " : "    ") + provList[i] + " (" + providerIds[i] + ")");
-      }
-      console.log((pi === provList.length ? "  > " : "    ") + "Quit");
-      const key = await waitKey();
-      if (key === "quit") process.exit(exitCode);
-      if (key === "enter") {
-        if (pi === provList.length) return null;
-        break;
-      }
-      if (key === "up") pi = (pi - 1 + totalProv) % totalProv;
-      if (key === "down") pi = (pi + 1) % totalProv;
-      process.stdout.write(`\x1b[${totalProv}A\x1b[0J`);
-    }
-    const providerId = providerIds[pi];
+    const providerId = await selectFromList(
+      providerIds.map((id) => ({
+        label: `${catalog.providers[id]?.name ?? id} (${id})`,
+        value: id,
+      })),
+      `Select ${roleLabel}  [Up/Down]  Enter to confirm`
+    );
+    if (providerId === null) return null;
+
     const prov = catalog.providers[providerId];
     const models = prov?.models ?? [];
     if (models.length === 0) continue;
-    const totalMod = models.length + 1; // +1 Quit
-    let mi = 0;
-    console.log("\n  [Up/Down] model  Enter to confirm  (last = recommended)\n");
-    while (true) {
-      for (let i = 0; i < models.length; i++) {
-        const rec = i === models.length - 1 ? "  (recommended)" : "";
-        console.log((i === mi ? "  > " : "    ") + models[i].label + " (" + models[i].id + ")" + rec);
-      }
-      console.log((mi === models.length ? "  > " : "    ") + "Quit");
-      const key = await waitKey();
-      if (key === "quit") process.exit(exitCode);
-      if (key === "enter") {
-        if (mi === models.length) break; // Quit at model step -> back to provider
-        return { provider: providerId, model: models[mi].id };
-      }
-      if (key === "up") mi = (mi - 1 + totalMod) % totalMod;
-      if (key === "down") mi = (mi + 1) % totalMod;
-      process.stdout.write(`\x1b[${totalMod}A\x1b[0J`);
-    }
+
+    const modelId = await selectFromList(
+      models.map((model, index) => ({
+        label: `${model.label} (${model.id})${index === models.length - 1 ? "  (recommended)" : ""}`,
+        value: model.id,
+      })),
+      "[Up/Down] model  Enter to confirm  (last = recommended)"
+    );
+    if (modelId === null) continue;
+    return { provider: providerId, model: modelId };
   }
 }
 
@@ -506,199 +468,206 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything.";
 
   let exitCode = 0;
-  for (;;) {
-    let selectedPlanner: DoctorAiModelOption;
-    let selectedImplementer: DoctorAiModelOption;
+  let selectedPlanner: DoctorAiModelOption;
+  let selectedImplementer: DoctorAiModelOption;
 
-    if (providerArg && modelArg) {
-      const match = options.find((o) => o.provider === providerArg && o.model === modelArg);
-      if (!match) {
-        console.error(`No matching option for --provider ${providerArg} --model ${modelArg}`);
-        process.exit(1);
+  if (providerArg && modelArg) {
+    const match = options.find((o) => o.provider === providerArg && o.model === modelArg);
+    if (!match) {
+      console.error(`No matching option for --provider ${providerArg} --model ${modelArg}`);
+      process.exit(1);
+    }
+    selectedPlanner = selectedImplementer = match;
+  } else if (isInteractive) {
+    const doctorAiDefault = getDefaultDoctorAiConfig(hasClaude, hasCodex);
+    selectedPlanner = {
+      provider: doctorAiDefault.planner.provider,
+      model: doctorAiDefault.planner.model,
+      recommended: false,
+    };
+    selectedImplementer = {
+      provider: doctorAiDefault.implementer.provider,
+      model: doctorAiDefault.implementer.model,
+      recommended: false,
+    };
+    for (;;) {
+      printCurrentAiConfig(
+        {
+          planner: {
+            provider: selectedPlanner.provider,
+            model: selectedPlanner.model,
+            ...(doctorAiDefault.planner.effort != null && { effort: doctorAiDefault.planner.effort }),
+          },
+          implementer: {
+            provider: selectedImplementer.provider,
+            model: selectedImplementer.model,
+            ...(doctorAiDefault.implementer.reasoning != null && { reasoning: doctorAiDefault.implementer.reasoning }),
+          },
+        },
+        "Doctor AI config"
+      );
+
+      const action = await selectFromList(
+        [
+          { label: "Run immediately", value: "run" as const },
+          { label: "Change models", value: "change" as const },
+        ],
+        "Action  [Up/Down]  Enter to confirm"
+      );
+      if (action === null) process.exit(exitCode);
+      if (action === "run") break;
+
+      if (usePlannerImplementerSelection) {
+        const firstRole = await selectFromList(
+          [
+            { label: "planner", value: "planner" as const },
+            { label: "implementer", value: "implementer" as const },
+          ],
+          "Mode  [Up/Down]  Enter to confirm"
+        );
+        if (firstRole === null) continue;
+        const secondRole = firstRole === "planner" ? "implementer" : "planner";
+
+        const firstSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, firstRole);
+        if (firstSel === null) continue;
+        const secondSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, secondRole);
+        if (secondSel === null) continue;
+
+        selectedPlanner =
+          firstRole === "planner"
+            ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
+            : { provider: secondSel.provider, model: secondSel.model, recommended: false };
+        selectedImplementer =
+          firstRole === "implementer"
+            ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
+            : { provider: secondSel.provider, model: secondSel.model, recommended: false };
+      } else {
+        const selected = await selectFromList(
+          options.map((option) => ({
+            label: `${option.provider} (${option.model})`,
+            value: option,
+          })),
+          "Select AI for workflow test  [Up/Down]  Enter to confirm"
+        );
+        if (selected === null) continue;
+        selectedPlanner = selectedImplementer = selected;
       }
-      selectedPlanner = selectedImplementer = match;
-    } else if (usePlannerImplementerSelection) {
-      console.log("\n  Current AI config");
-      console.log("  -----------------");
-      const pl = config.planner;
-      const impl = config.implementer;
-      const plExtra = pl.effort != null ? `effort: ${pl.effort}` : pl.reasoning != null ? `reasoning: ${pl.reasoning}` : undefined;
-      const implExtra = impl.effort != null ? `effort: ${impl.effort}` : impl.reasoning != null ? `reasoning: ${impl.reasoning}` : undefined;
-      console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, false));
-      console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
+    }
+  } else {
+    selectedPlanner = selectedImplementer = options[0];
+  }
 
-      const modes = ["planner", "implementer"];
-      const totalMode = modes.length + 1; // +1 Quit
-      let modeIndex = 0;
-      console.log("\n  Mode  [Up/Down]  Enter to confirm\n");
-      while (true) {
-        for (let i = 0; i < modes.length; i++) {
-          console.log((i === modeIndex ? "  > " : "    ") + modes[i]);
-        }
-        console.log((modeIndex === modes.length ? "  > " : "    ") + "Quit");
-        const key = await waitKey();
-        if (key === "quit") process.exit(exitCode);
-        if (key === "enter") {
-          if (modeIndex === modes.length) process.exit(exitCode);
-          break;
-        }
-        if (key === "up") modeIndex = (modeIndex - 1 + totalMode) % totalMode;
-        if (key === "down") modeIndex = (modeIndex + 1) % totalMode;
-        process.stdout.write(`\x1b[${totalMode}A\x1b[0J`);
-      }
-      const firstRole = modes[modeIndex] as "planner" | "implementer";
-      const secondRole = firstRole === "planner" ? "implementer" : "planner";
+  const plannerRunner = getOneTurnRunner(selectedPlanner.provider);
+  const implementerRunner = getOneTurnRunner(selectedImplementer.provider);
+  if (!plannerRunner || !implementerRunner) {
+    throw new Error("Unsupported provider selected for doctor ai");
+  }
 
-      const firstSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, firstRole, exitCode);
-      if (firstSel === null) process.exit(exitCode);
-      const secondSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, secondRole, exitCode);
-      if (secondSel === null) process.exit(exitCode);
+  console.log("\nRunning workflow tests (planner: " + selectedPlanner.provider + " / " + selectedPlanner.model + ", implementer: " + selectedImplementer.provider + " / " + selectedImplementer.model + ")...\n");
 
-      selectedPlanner =
-        firstRole === "planner"
-          ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
-          : { provider: secondSel.provider, model: secondSel.model, recommended: false };
-      selectedImplementer =
-        firstRole === "implementer"
-          ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
-          : { provider: secondSel.provider, model: secondSel.model, recommended: false };
-    } else if (process.stdin.isTTY) {
-      // Fallback: flat list when catalog missing (no recommended; doctor ai recommended = cheapest only in catalog flow)
-      console.log("\n  Current AI config");
-      console.log("  -----------------");
-      const pl = config.planner;
-      const impl = config.implementer;
-      const plExtra = pl.effort != null ? `effort: ${pl.effort}` : pl.reasoning != null ? `reasoning: ${pl.reasoning}` : undefined;
-      const implExtra = impl.effort != null ? `effort: ${impl.effort}` : impl.reasoning != null ? `reasoning: ${impl.reasoning}` : undefined;
-      console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, false));
-      console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
-      console.log("");
-      console.log("  Select AI for workflow test  [Up/Down]  Enter to confirm\n");
-      const totalRows = options.length + 1;
-      let index = 0;
-      while (true) {
-        for (let i = 0; i < options.length; i++) {
-          const o = options[i];
-          console.log((i === index ? "  > " : "    ") + `${o.provider} (${o.model})`);
-        }
-        console.log((index === options.length ? "  > " : "    ") + "Quit");
-        const key = await waitKey();
-        if (key === "quit") process.exit(exitCode);
-        if (key === "enter") {
-          if (index === options.length) process.exit(exitCode);
-          break;
-        }
-        if (key === "up") index = (index - 1 + totalRows) % totalRows;
-        if (key === "down") index = (index + 1) % totalRows;
-        process.stdout.write(`\x1b[${totalRows}A\x1b[0J`);
-      }
-      selectedPlanner = selectedImplementer = options[index];
-    } else {
-      selectedPlanner = selectedImplementer = options[0];
+  let tc1Pass = false;
+  let tc2Pass = false;
+  let tc3Pass = false;
+  if (process.stdout.isTTY) {
+    const tc1 = await runStreamingDoctorTc(
+      "TC1 (plan request)",
+      systemPrompt,
+      promptsData.tc1PlanRequest,
+      ["planforge plan", "run_plan.sh"],
+      selectedPlanner.provider,
+      selectedPlanner.model,
+      projectRoot
+    );
+    tc1Pass = tc1.passed;
+    if (tc1.error) {
+      console.error("TC1 (plan request) error:", tc1.error);
     }
 
-    const plannerRunner = getOneTurnRunner(selectedPlanner.provider);
-    const implementerRunner = getOneTurnRunner(selectedImplementer.provider);
-    if (!plannerRunner || !implementerRunner) {
-      throw new Error("Unsupported provider selected for doctor ai");
+    const tc2 = await runStreamingDoctorTc(
+      "TC2 (implement request)",
+      systemPrompt,
+      promptsData.tc2ImplementRequest,
+      ["planforge implement", "run_implement.sh"],
+      selectedImplementer.provider,
+      selectedImplementer.model,
+      projectRoot
+    );
+    tc2Pass = tc2.passed;
+    if (tc2.error) {
+      console.error("TC2 (implement request) error:", tc2.error);
     }
 
-    console.log("\nRunning workflow tests (planner: " + selectedPlanner.provider + " / " + selectedPlanner.model + ", implementer: " + selectedImplementer.provider + " / " + selectedImplementer.model + ")...\n");
-
-    let tc1Pass = false;
-    let tc2Pass = false;
-    let tc3Pass = false;
-    if (process.stdout.isTTY) {
-      const tc1 = await runStreamingDoctorTc(
-        "TC1 (plan request)",
+    const tc3 = await runStreamingDoctorTc(
+      "TC3 (/p with implementation-style request)",
+      systemPrompt,
+      promptsData.tc3SlashPWithImplementationStyleContent,
+      ["planforge plan", "run_plan.sh"],
+      selectedPlanner.provider,
+      selectedPlanner.model,
+      projectRoot
+    );
+    tc3Pass = tc3.passed;
+    if (tc3.error) {
+      console.error("TC3 (/p with implementation-style request) error:", tc3.error);
+    }
+    const green = "\x1b[32m";
+    const red = "\x1b[31m";
+    const reset = "\x1b[0m";
+    console.log("  Test case results:");
+    console.log("  TC1 (plan request)     : " + (tc1Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
+    console.log("  TC2 (implement request): " + (tc2Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
+    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
+    console.log("");
+  } else {
+    try {
+      const tc1Response = await plannerRunner.completeOneTurn(
         systemPrompt,
         promptsData.tc1PlanRequest,
-        ["planforge plan", "run_plan.sh"],
-        selectedPlanner.provider,
-        selectedPlanner.model,
-        projectRoot
+        { cwd: projectRoot, model: selectedPlanner.model }
       );
-      tc1Pass = tc1.passed;
-      if (tc1.error) {
-        console.error("TC1 (plan request) error:", tc1.error);
-      }
-
-      const tc2 = await runStreamingDoctorTc(
-        "TC2 (implement request)",
+      tc1Pass =
+        tc1Response.includes("planforge plan") ||
+        tc1Response.includes("run_plan.sh");
+    } catch (e) {
+      console.error("TC1 (plan request) error:", (e as Error).message);
+    }
+    try {
+      const tc2Response = await implementerRunner.completeOneTurn(
         systemPrompt,
         promptsData.tc2ImplementRequest,
-        ["planforge implement", "run_implement.sh"],
-        selectedImplementer.provider,
-        selectedImplementer.model,
-        projectRoot
+        { cwd: projectRoot, model: selectedImplementer.model }
       );
-      tc2Pass = tc2.passed;
-      if (tc2.error) {
-        console.error("TC2 (implement request) error:", tc2.error);
-      }
-
-      const tc3 = await runStreamingDoctorTc(
-        "TC3 (/p with implementation-style request)",
+      tc2Pass =
+        tc2Response.includes("planforge implement") ||
+        tc2Response.includes("run_implement.sh");
+    } catch (e) {
+      console.error("TC2 (implement request) error:", (e as Error).message);
+    }
+    try {
+      const tc3Response = await plannerRunner.completeOneTurn(
         systemPrompt,
         promptsData.tc3SlashPWithImplementationStyleContent,
-        ["planforge plan", "run_plan.sh"],
-        selectedPlanner.provider,
-        selectedPlanner.model,
-        projectRoot
+        { cwd: projectRoot, model: selectedPlanner.model }
       );
-      tc3Pass = tc3.passed;
-      if (tc3.error) {
-        console.error("TC3 (/p with implementation-style request) error:", tc3.error);
-      }
-      console.log("");
-    } else {
-      try {
-        const tc1Response = await plannerRunner.completeOneTurn(
-          systemPrompt,
-          promptsData.tc1PlanRequest,
-          { cwd: projectRoot, model: selectedPlanner.model }
-        );
-        tc1Pass =
-          tc1Response.includes("planforge plan") ||
-          tc1Response.includes("run_plan.sh");
-      } catch (e) {
-        console.error("TC1 (plan request) error:", (e as Error).message);
-      }
-      try {
-        const tc2Response = await implementerRunner.completeOneTurn(
-          systemPrompt,
-          promptsData.tc2ImplementRequest,
-          { cwd: projectRoot, model: selectedImplementer.model }
-        );
-        tc2Pass =
-          tc2Response.includes("planforge implement") ||
-          tc2Response.includes("run_implement.sh");
-      } catch (e) {
-        console.error("TC2 (implement request) error:", (e as Error).message);
-      }
-      try {
-        const tc3Response = await plannerRunner.completeOneTurn(
-          systemPrompt,
-          promptsData.tc3SlashPWithImplementationStyleContent,
-          { cwd: projectRoot, model: selectedPlanner.model }
-        );
-        tc3Pass =
-          tc3Response.includes("planforge plan") ||
-          tc3Response.includes("run_plan.sh");
-      } catch (e) {
-        console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
-      }
+      tc3Pass =
+        tc3Response.includes("planforge plan") ||
+        tc3Response.includes("run_plan.sh");
+    } catch (e) {
+      console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
+    }
 
-      console.log("  TC1 (plan request)     : " + (tc1Pass ? "[OK] pass" : "[FAIL]"));
-      console.log("  TC2 (implement request): " + (tc2Pass ? "[OK] pass" : "[FAIL]"));
-      console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? "[OK] pass" : "[FAIL]"));
-      console.log("");
-    }
-    if (!tc1Pass || !tc2Pass || !tc3Pass) {
-      exitCode = 1;
-    }
-    if (!isInteractive) {
-      process.exit(exitCode);
-    }
+    const green = "\x1b[32m";
+    const red = "\x1b[31m";
+    const reset = "\x1b[0m";
+    console.log("  Test case results:");
+    console.log("  TC1 (plan request)     : " + (tc1Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
+    console.log("  TC2 (implement request): " + (tc2Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
+    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? green + "[OK] pass" + reset : red + "[FAIL]" + reset));
+    console.log("");
   }
+
+  if (!tc1Pass || !tc2Pass || !tc3Pass) {
+    exitCode = 1;
+  }
+  process.exit(exitCode);
 }

@@ -1,0 +1,12 @@
+{
+  "planner": {
+    "provider": "codex",
+    "model": "gpt-5.1-codex-max",
+    "reasoning": "low"
+  },
+  "implementer": {
+    "provider": "codex",
+    "model": "gpt-5.1-codex-max",
+    "reasoning": "low"
+  }
+}

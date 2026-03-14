@@ -6,7 +6,7 @@ from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_models_json_path
 from planforge.utils.config import get_default_config
-from planforge.utils.tui import wait_key
+from planforge.utils.tui import wait_key, print_current_ai_config
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 
@@ -31,24 +31,27 @@ def _run_model_tui(
     mode_providers = catalog.get("modeProviders", {})
     providers_data = catalog.get("providers", {})
 
-    # Step 1: mode
+    # Step 1: mode (with Quit option)
+    mode_options = list(modes) + ["Quit"]
     mode_index = 0
     print("\n  Mode: [Up/Down]  Enter to confirm\n")
     while True:
-        for i, m in enumerate(modes):
+        for i, m in enumerate(mode_options):
             prefix = "  > " if i == mode_index else "    "
             print(f"{prefix} {m}")
         key = wait_key()
         if key == "quit":
             return None
         if key == "enter":
+            if mode_index == len(mode_options) - 1:
+                return None  # Quit
             break
         if key == "up":
-            mode_index = (mode_index - 1) % len(modes)
+            mode_index = (mode_index - 1) % len(mode_options)
         elif key == "down":
-            mode_index = (mode_index + 1) % len(modes)
+            mode_index = (mode_index + 1) % len(mode_options)
         if key in ("up", "down"):
-            sys.stdout.write(f"\033[{len(modes)}A\033[0J")
+            sys.stdout.write(f"\033[{len(mode_options)}A\033[0J")
             sys.stdout.flush()
     mode = modes[mode_index]
     provider_ids = mode_providers.get(mode, list(providers_data.keys()))
@@ -118,36 +121,39 @@ def _run_model_tui(
             sys.stdout.write(f"\033[{len(models)}A\033[0J")
             sys.stdout.flush()
 
-    # Step 3b: Effort (Claude) or Reasoning (Codex) selection (Up/Down, Enter to confirm)
-    opts = effort_opts if is_claude else reasoning_opts
+    # Step 3b: Effort (Claude, only if model supports it) or Reasoning (Codex) selection
+    selected_model = models[model_index]
+    claude_supports_effort = is_claude and selected_model.get("effort", True) is not False
+    opts = (effort_opts if claude_supports_effort else []) if is_claude else reasoning_opts
     label = "Effort" if is_claude else "Reasoning"
     opt_index = min(1, len(opts) - 1) if opts else 0
-    print(f"\n  [Up/Down] {label}  Enter to confirm\n")
-    while True:
-        for i, val in enumerate(opts):
-            prefix = "  > " if i == opt_index else "    "
-            print(prefix + val)
-        key = wait_key()
-        if key == "quit":
-            return None
-        if key == "enter":
-            break
-        if key == "up":
-            opt_index = (opt_index - 1) % len(opts)
-        elif key == "down":
-            opt_index = (opt_index + 1) % len(opts)
-        if key in ("up", "down"):
-            sys.stdout.write(f"\033[{len(opts)}A\033[0J")
-            sys.stdout.flush()
+    if opts:
+        print(f"\n  [Up/Down] {label}  Enter to confirm\n")
+        while True:
+            for i, val in enumerate(opts):
+                prefix = "  > " if i == opt_index else "    "
+                print(prefix + val)
+            key = wait_key()
+            if key == "quit":
+                return None
+            if key == "enter":
+                break
+            if key == "up":
+                opt_index = (opt_index - 1) % len(opts)
+            elif key == "down":
+                opt_index = (opt_index + 1) % len(opts)
+            if key in ("up", "down"):
+                sys.stdout.write(f"\033[{len(opts)}A\033[0J")
+                sys.stdout.flush()
 
     model_id = models[model_index]["id"]
     result = {
         "provider": provider_id,
         "model": model_id,
     }
-    if is_claude:
+    if is_claude and claude_supports_effort:
         result["effort"] = effort_opts[opt_index]
-    else:
+    elif not is_claude:
         result["reasoning"] = reasoning_opts[opt_index]
     return (mode, result)
 
@@ -175,6 +181,13 @@ def run_model(args: list[str]) -> None:
     if not sys.stdin.isatty():
         print("planforge model requires an interactive terminal.", file=sys.stderr)
         raise SystemExit(1)
+
+    if config_path.exists():
+        try:
+            data = json.loads(config_path.read_text(encoding="utf-8"))
+            print_current_ai_config(data)
+        except (json.JSONDecodeError, OSError):
+            pass
 
     selected = _run_model_tui(catalog, project_root, has_claude, has_codex, default_config)
     if selected is None:

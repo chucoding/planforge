@@ -2,7 +2,14 @@
  * Shared TUI key handling for arrow-key selection (doctor, model commands).
  */
 
+import type { PlanForgeConfig } from "../config/types.js";
+
 export type KeyAction = "up" | "down" | "left" | "right" | "enter" | "quit" | null;
+
+export interface SelectListItem<T> {
+  label: string;
+  value: T;
+}
 
 export function waitKey(): Promise<KeyAction> {
   return new Promise((resolveKey) => {
@@ -69,4 +76,54 @@ export function waitKey(): Promise<KeyAction> {
 
     process.stdin.on("data", onData);
   });
+}
+
+export async function selectFromList<T>(
+  items: SelectListItem<T>[],
+  prompt: string,
+  options?: { initialIndex?: number; quitLabel?: string }
+): Promise<T | null> {
+  if (items.length === 0) return null;
+
+  const quitLabel = options?.quitLabel ?? "Quit";
+  const totalRows = items.length + 1;
+  let index = Math.min(Math.max(options?.initialIndex ?? 0, 0), items.length);
+
+  console.log(`\n  ${prompt}\n`);
+  while (true) {
+    for (let i = 0; i < items.length; i++) {
+      console.log((i === index ? "  > " : "    ") + items[i].label);
+    }
+    console.log((index === items.length ? "  > " : "    ") + quitLabel);
+
+    const key = await waitKey();
+    if (key === "quit") return null;
+    if (key === "enter") {
+      if (index === items.length) return null;
+      return items[index].value;
+    }
+    if (key === "up") index = (index - 1 + totalRows) % totalRows;
+    if (key === "down") index = (index + 1) % totalRows;
+    process.stdout.write(`\x1b[${totalRows}A\x1b[0J`);
+  }
+}
+
+function formatRoleLine(role: string, roleConfig: PlanForgeConfig["planner"]): string {
+  const extra =
+    roleConfig.effort != null
+      ? ` (effort: ${roleConfig.effort})`
+      : roleConfig.reasoning != null
+        ? ` (reasoning: ${roleConfig.reasoning})`
+        : "";
+  return `  ${role.padEnd(12)}: ${roleConfig.provider.padEnd(6)} / ${roleConfig.model.padEnd(20)}${extra}`;
+}
+
+export function printCurrentAiConfig(
+  config: Pick<PlanForgeConfig, "planner" | "implementer">,
+  heading = "Current AI config"
+): void {
+  console.log(`\n  ${heading}`);
+  console.log(`  ${"-".repeat(heading.length)}`);
+  console.log(formatRoleLine("planner", config.planner));
+  console.log(formatRoleLine("implementer", config.implementer));
 }
