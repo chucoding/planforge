@@ -248,6 +248,67 @@ function formatRoleLine(role: string, provider: string, model: string, extra?: s
   return `  ${role.padEnd(12)}: ${provider.padEnd(6)} / ${model.padEnd(20)}${ext}${rec}`;
 }
 
+/**
+ * Interactive: select provider then model (last model = recommended). Returns { provider, model } or null if Quit.
+ */
+async function selectProviderAndModel(
+  catalog: ModelsCatalog,
+  hasClaude: boolean,
+  hasCodex: boolean,
+  roleLabel: string,
+  exitCode: number
+): Promise<{ provider: string; model: string } | null> {
+  const providerIds = Object.keys(catalog.providers).filter(
+    (p) => (p === "claude" && hasClaude) || (p === "codex" && hasCodex)
+  );
+  if (providerIds.length === 0) return null;
+
+  for (;;) {
+    const provList = providerIds.map((id) => catalog.providers[id]?.name ?? id);
+    const totalProv = provList.length + 1; // +1 Quit
+    let pi = 0;
+    console.log(`\n  Select ${roleLabel}  [Up/Down]  Enter to confirm\n`);
+    while (true) {
+      for (let i = 0; i < provList.length; i++) {
+        console.log((i === pi ? "  > " : "    ") + provList[i] + " (" + providerIds[i] + ")");
+      }
+      console.log((pi === provList.length ? "  > " : "    ") + "Quit");
+      const key = await waitKey();
+      if (key === "quit") process.exit(exitCode);
+      if (key === "enter") {
+        if (pi === provList.length) return null;
+        break;
+      }
+      if (key === "up") pi = (pi - 1 + totalProv) % totalProv;
+      if (key === "down") pi = (pi + 1) % totalProv;
+      process.stdout.write(`\x1b[${totalProv}A\x1b[0J`);
+    }
+    const providerId = providerIds[pi];
+    const prov = catalog.providers[providerId];
+    const models = prov?.models ?? [];
+    if (models.length === 0) continue;
+    const totalMod = models.length + 1; // +1 Quit
+    let mi = 0;
+    console.log("\n  [Up/Down] model  Enter to confirm  (last = recommended)\n");
+    while (true) {
+      for (let i = 0; i < models.length; i++) {
+        const rec = i === models.length - 1 ? "  (recommended)" : "";
+        console.log((i === mi ? "  > " : "    ") + models[i].label + " (" + models[i].id + ")" + rec);
+      }
+      console.log((mi === models.length ? "  > " : "    ") + "Quit");
+      const key = await waitKey();
+      if (key === "quit") process.exit(exitCode);
+      if (key === "enter") {
+        if (mi === models.length) break; // Quit at model step -> back to provider
+        return { provider: providerId, model: models[mi].id };
+      }
+      if (key === "up") mi = (mi - 1 + totalMod) % totalMod;
+      if (key === "down") mi = (mi + 1) % totalMod;
+      process.stdout.write(`\x1b[${totalMod}A\x1b[0J`);
+    }
+  }
+}
+
 export async function runDoctorAi(args: string[]): Promise<void> {
   const cwd = process.cwd();
   const projectRoot = getProjectRoot(cwd);
@@ -306,15 +367,10 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // recommended = current planforge.json planner (plan assumption)
-  const plannerKey = config.planner.provider + "|" + config.planner.model;
-  for (const o of options) {
-    o.recommended = (o.provider + "|" + o.model) === plannerKey;
-  }
-
   const providerArg = args.includes("--provider") ? args[args.indexOf("--provider") + 1] : undefined;
   const modelArg = args.includes("--model") ? args[args.indexOf("--model") + 1] : undefined;
   const isInteractive = process.stdin.isTTY && !providerArg && !modelArg;
+  const usePlannerImplementerSelection = isInteractive && catalog !== null;
 
   const promptsPath = resolve(getTemplatesRoot(), "doctor-ai", "prompts.json");
   if (!fs.existsSync(promptsPath)) {
@@ -340,15 +396,67 @@ export async function runDoctorAi(args: string[]): Promise<void> {
 
   let exitCode = 0;
   for (;;) {
-    let selected: DoctorAiModelOption;
+    let selectedPlanner: DoctorAiModelOption;
+    let selectedImplementer: DoctorAiModelOption;
+
     if (providerArg && modelArg) {
       const match = options.find((o) => o.provider === providerArg && o.model === modelArg);
       if (!match) {
         console.error(`No matching option for --provider ${providerArg} --model ${modelArg}`);
         process.exit(1);
       }
-      selected = match;
+      selectedPlanner = selectedImplementer = match;
+    } else if (usePlannerImplementerSelection) {
+      console.log("\n  Current AI config");
+      console.log("  -----------------");
+      const pl = config.planner;
+      const impl = config.implementer;
+      const plExtra = pl.effort != null ? `effort: ${pl.effort}` : pl.reasoning != null ? `reasoning: ${pl.reasoning}` : undefined;
+      const implExtra = impl.effort != null ? `effort: ${impl.effort}` : impl.reasoning != null ? `reasoning: ${impl.reasoning}` : undefined;
+      console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, true));
+      console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
+
+      const modes = ["planner", "implementer"];
+      const totalMode = modes.length + 1; // +1 Quit
+      let modeIndex = 0;
+      console.log("\n  Mode  [Up/Down]  Enter to confirm\n");
+      while (true) {
+        for (let i = 0; i < modes.length; i++) {
+          console.log((i === modeIndex ? "  > " : "    ") + modes[i]);
+        }
+        console.log((modeIndex === modes.length ? "  > " : "    ") + "Quit");
+        const key = await waitKey();
+        if (key === "quit") process.exit(exitCode);
+        if (key === "enter") {
+          if (modeIndex === modes.length) process.exit(exitCode);
+          break;
+        }
+        if (key === "up") modeIndex = (modeIndex - 1 + totalMode) % totalMode;
+        if (key === "down") modeIndex = (modeIndex + 1) % totalMode;
+        process.stdout.write(`\x1b[${totalMode}A\x1b[0J`);
+      }
+      const firstRole = modes[modeIndex] as "planner" | "implementer";
+      const secondRole = firstRole === "planner" ? "implementer" : "planner";
+
+      const firstSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, firstRole, exitCode);
+      if (firstSel === null) process.exit(exitCode);
+      const secondSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, secondRole, exitCode);
+      if (secondSel === null) process.exit(exitCode);
+
+      selectedPlanner =
+        firstRole === "planner"
+          ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
+          : { provider: secondSel.provider, model: secondSel.model, recommended: false };
+      selectedImplementer =
+        firstRole === "implementer"
+          ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
+          : { provider: secondSel.provider, model: secondSel.model, recommended: false };
     } else if (process.stdin.isTTY) {
+      // Fallback: flat list when catalog missing
+      const plannerKey = config.planner.provider + "|" + config.planner.model;
+      for (const o of options) {
+        o.recommended = (o.provider + "|" + o.model) === plannerKey;
+      }
       console.log("\n  Current AI config");
       console.log("  -----------------");
       const pl = config.planner;
@@ -359,7 +467,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
       console.log("");
       console.log("  Select AI for workflow test  [Up/Down]  Enter to confirm\n");
-      const totalRows = options.length + 1; // +1 for Quit
+      const totalRows = options.length + 1;
       let index = 0;
       while (true) {
         for (let i = 0; i < options.length; i++) {
@@ -378,25 +486,26 @@ export async function runDoctorAi(args: string[]): Promise<void> {
         if (key === "down") index = (index + 1) % totalRows;
         process.stdout.write(`\x1b[${totalRows}A\x1b[0J`);
       }
-      selected = options[index];
+      selectedPlanner = selectedImplementer = options[index];
     } else {
-      selected = options[0];
+      selectedPlanner = selectedImplementer = options[0];
     }
 
-    const completeOneTurn =
-      selected.provider === "claude" ? claudeCompleteOneTurn : codexCompleteOneTurn;
-    const opts = { cwd: projectRoot, model: selected.model };
+    const plannerComplete =
+      selectedPlanner.provider === "claude" ? claudeCompleteOneTurn : codexCompleteOneTurn;
+    const implementerComplete =
+      selectedImplementer.provider === "claude" ? claudeCompleteOneTurn : codexCompleteOneTurn;
 
-    console.log("\nRunning workflow tests with " + selected.provider + " (" + selected.model + ")...\n");
+    console.log("\nRunning workflow tests (planner: " + selectedPlanner.provider + " / " + selectedPlanner.model + ", implementer: " + selectedImplementer.provider + " / " + selectedImplementer.model + ")...\n");
 
     let tc1Pass = false;
     let tc2Pass = false;
     let tc3Pass = false;
     try {
-      const tc1Response = await completeOneTurn(
+      const tc1Response = await plannerComplete(
         systemPrompt,
         promptsData.tc1PlanRequest,
-        opts
+        { cwd: projectRoot, model: selectedPlanner.model }
       );
       tc1Pass =
         tc1Response.includes("planforge plan") ||
@@ -405,10 +514,10 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       console.error("TC1 (plan request) error:", (e as Error).message);
     }
     try {
-      const tc2Response = await completeOneTurn(
+      const tc2Response = await implementerComplete(
         systemPrompt,
         promptsData.tc2ImplementRequest,
-        opts
+        { cwd: projectRoot, model: selectedImplementer.model }
       );
       tc2Pass =
         tc2Response.includes("planforge implement") ||
@@ -417,10 +526,10 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       console.error("TC2 (implement request) error:", (e as Error).message);
     }
     try {
-      const tc3Response = await completeOneTurn(
+      const tc3Response = await plannerComplete(
         systemPrompt,
         promptsData.tc3SlashPWithImplementationStyleContent,
-        opts
+        { cwd: projectRoot, model: selectedPlanner.model }
       );
       tc3Pass =
         tc3Response.includes("planforge plan") ||

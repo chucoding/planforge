@@ -213,6 +213,79 @@ def _build_options_from_catalog(
     return options
 
 
+def _select_provider_and_model(
+    catalog: dict,
+    has_claude: bool,
+    has_codex: bool,
+    role_label: str,
+    exit_code: int,
+) -> tuple[str, str] | None:
+    """Interactive: select provider then model (last model = recommended). Returns (provider, model) or None if Quit."""
+    providers_data = catalog.get("providers", {})
+    provider_ids = [
+        p for p in providers_data
+        if (p == "claude" and has_claude) or (p == "codex" and has_codex)
+    ]
+    if not provider_ids:
+        return None
+
+    while True:
+        prov_names = [providers_data.get(p, {}).get("name", p) if isinstance(providers_data.get(p), dict) else p for p in provider_ids]
+        total_prov = len(prov_names) + 1
+        pi = 0
+        print(f"\n  Select {role_label}  [Up/Down]  Enter to confirm\n")
+        while True:
+            for i, name in enumerate(prov_names):
+                prefix = "  > " if i == pi else "    "
+                print(f"{prefix}{name} ({provider_ids[i]})")
+            prefix = "  > " if pi == len(prov_names) else "    "
+            print(f"{prefix}Quit")
+            key = wait_key()
+            if key == "quit":
+                raise SystemExit(exit_code)
+            if key == "enter":
+                if pi == len(prov_names):
+                    return None
+                break
+            if key == "up":
+                pi = (pi - 1) % total_prov
+            elif key == "down":
+                pi = (pi + 1) % total_prov
+            sys.stdout.write("\033[%dA\033[0J" % total_prov)
+            sys.stdout.flush()
+        provider_id = provider_ids[pi]
+        prov = providers_data.get(provider_id) or {}
+        models = prov.get("models", []) if isinstance(prov, dict) else []
+        if not models:
+            continue
+        total_mod = len(models) + 1
+        mi = 0
+        print("\n  [Up/Down] model  Enter to confirm  (last = recommended)\n")
+        while True:
+            for i, m in enumerate(models):
+                rec = "  (recommended)" if i == len(models) - 1 else ""
+                prefix = "  > " if i == mi else "    "
+                mid = m.get("id", "") if isinstance(m, dict) else ""
+                label = m.get("label", mid) if isinstance(m, dict) else mid
+                print(f"{prefix}{label} ({mid}){rec}")
+            prefix = "  > " if mi == len(models) else "    "
+            print(f"{prefix}Quit")
+            key = wait_key()
+            if key == "quit":
+                raise SystemExit(exit_code)
+            if key == "enter":
+                if mi == len(models):
+                    break
+                model_id = models[mi].get("id", "") if isinstance(models[mi], dict) else ""
+                return (provider_id, model_id)
+            if key == "up":
+                mi = (mi - 1) % total_mod
+            elif key == "down":
+                mi = (mi + 1) % total_mod
+            sys.stdout.write("\033[%dA\033[0J" % total_mod)
+            sys.stdout.flush()
+
+
 def run_doctor_ai(args: list[str]) -> None:
     project_root = get_project_root()
     has_claude = check_claude()
@@ -274,6 +347,7 @@ def run_doctor_ai(args: list[str]) -> None:
     )
 
     is_interactive = sys.stdin.isatty() and not (provider_arg and model_arg)
+    use_planner_implementer_selection = is_interactive and catalog is not None
     exit_code = 0
     while True:
         if provider_arg and model_arg:
@@ -281,8 +355,58 @@ def run_doctor_ai(args: list[str]) -> None:
             if not match:
                 print(f"No matching option for --provider {provider_arg} --model {model_arg}", file=sys.stderr)
                 raise SystemExit(1)
-            selected = (match[0], match[1])
+            selected_planner = selected_implementer = (match[0], match[1])
+        elif use_planner_implementer_selection:
+            pl = config.planner
+            impl = config.implementer
+            pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
+            impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
+            print("\n  Current AI config")
+            print("  -----------------")
+            print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}  (recommended)")
+            print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
+
+            modes = ["planner", "implementer"]
+            total_mode = len(modes) + 1
+            mode_index = 0
+            print("\n  Mode  [Up/Down]  Enter to confirm\n")
+            while True:
+                for i, m in enumerate(modes):
+                    prefix = "  > " if i == mode_index else "    "
+                    print(f"{prefix}{m}")
+                prefix = "  > " if mode_index == len(modes) else "    "
+                print(f"{prefix}Quit")
+                key = wait_key()
+                if key == "quit":
+                    raise SystemExit(exit_code)
+                if key == "enter":
+                    if mode_index == len(modes):
+                        raise SystemExit(exit_code)
+                    break
+                if key == "up":
+                    mode_index = (mode_index - 1) % total_mode
+                elif key == "down":
+                    mode_index = (mode_index + 1) % total_mode
+                sys.stdout.write("\033[%dA\033[0J" % total_mode)
+                sys.stdout.flush()
+            first_role = modes[mode_index]
+            second_role = "implementer" if first_role == "planner" else "planner"
+
+            first_sel = _select_provider_and_model(catalog, has_claude, has_codex, first_role, exit_code)
+            if first_sel is None:
+                raise SystemExit(exit_code)
+            second_sel = _select_provider_and_model(catalog, has_claude, has_codex, second_role, exit_code)
+            if second_sel is None:
+                raise SystemExit(exit_code)
+            if first_role == "planner":
+                selected_planner = first_sel
+                selected_implementer = second_sel
+            else:
+                selected_planner = second_sel
+                selected_implementer = first_sel
         elif sys.stdin.isatty():
+            planner_key = f"{config.planner.get('provider', '')}|{config.planner.get('model', '')}"
+            options = [(p, m, (p + "|" + m) == planner_key) for (p, m, _) in options]
             pl = config.planner
             impl = config.implementer
             pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
@@ -293,7 +417,7 @@ def run_doctor_ai(args: list[str]) -> None:
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
             print("")
             print("  Select AI for workflow test  [Up/Down]  Enter to confirm\n")
-            total_rows = len(options) + 1  # +1 for Quit
+            total_rows = len(options) + 1
             index = 0
             while True:
                 for i, (prov, model, rec) in enumerate(options):
@@ -315,30 +439,30 @@ def run_doctor_ai(args: list[str]) -> None:
                     index = (index + 1) % total_rows
                 sys.stdout.write("\033[%dA\033[0J" % total_rows)
                 sys.stdout.flush()
-            selected = (options[index][0], options[index][1])
+            selected_planner = selected_implementer = (options[index][0], options[index][1])
         else:
-            selected = (options[0][0], options[0][1])
+            selected_planner = selected_implementer = (options[0][0], options[0][1])
 
-        complete_one_turn = claude_complete_one_turn if selected[0] == "claude" else codex_complete_one_turn
-        opts = {"cwd": project_root, "model": selected[1]}
+        planner_complete = claude_complete_one_turn if selected_planner[0] == "claude" else codex_complete_one_turn
+        implementer_complete = claude_complete_one_turn if selected_implementer[0] == "claude" else codex_complete_one_turn
 
-        print("\nRunning workflow tests with " + selected[0] + " (" + selected[1] + ")...\n")
+        print("\nRunning workflow tests (planner: " + selected_planner[0] + " / " + selected_planner[1] + ", implementer: " + selected_implementer[0] + " / " + selected_implementer[1] + ")...\n")
 
         tc1_pass = False
         tc2_pass = False
         tc3_pass = False
         try:
-            tc1_response = complete_one_turn(system_prompt, tc1_msg, **opts)
+            tc1_response = planner_complete(system_prompt, tc1_msg, cwd=project_root, model=selected_planner[1])
             tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
         except Exception as e:
             print("TC1 (plan request) error:", e, file=sys.stderr)
         try:
-            tc2_response = complete_one_turn(system_prompt, tc2_msg, **opts)
+            tc2_response = implementer_complete(system_prompt, tc2_msg, cwd=project_root, model=selected_implementer[1])
             tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
         except Exception as e:
             print("TC2 (implement request) error:", e, file=sys.stderr)
         try:
-            tc3_response = complete_one_turn(system_prompt, tc3_msg, **opts)
+            tc3_response = planner_complete(system_prompt, tc3_msg, cwd=project_root, model=selected_planner[1])
             tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
         except Exception as e:
             print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
