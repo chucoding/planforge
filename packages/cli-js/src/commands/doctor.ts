@@ -359,6 +359,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
       console.log("");
       console.log("  Select AI for workflow test  [Up/Down]  Enter to confirm\n");
+      const totalRows = options.length + 1; // +1 for Quit
       let index = 0;
       while (true) {
         for (let i = 0; i < options.length; i++) {
@@ -366,12 +367,16 @@ export async function runDoctorAi(args: string[]): Promise<void> {
           const rec = o.recommended ? "  (recommended)" : "";
           console.log((i === index ? "  > " : "    ") + `${o.provider} (${o.model})${rec}`);
         }
+        console.log((index === options.length ? "  > " : "    ") + "Quit");
         const key = await waitKey();
         if (key === "quit") process.exit(exitCode);
-        if (key === "enter") break;
-        if (key === "up") index = (index - 1 + options.length) % options.length;
-        if (key === "down") index = (index + 1) % options.length;
-        process.stdout.write(`\x1b[${options.length}A\x1b[0J`);
+        if (key === "enter") {
+          if (index === options.length) process.exit(exitCode);
+          break;
+        }
+        if (key === "up") index = (index - 1 + totalRows) % totalRows;
+        if (key === "down") index = (index + 1) % totalRows;
+        process.stdout.write(`\x1b[${totalRows}A\x1b[0J`);
       }
       selected = options[index];
     } else {

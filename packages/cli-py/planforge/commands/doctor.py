@@ -293,22 +293,27 @@ def run_doctor_ai(args: list[str]) -> None:
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
             print("")
             print("  Select AI for workflow test  [Up/Down]  Enter to confirm\n")
+            total_rows = len(options) + 1  # +1 for Quit
             index = 0
             while True:
                 for i, (prov, model, rec) in enumerate(options):
                     rec_str = "  (recommended)" if rec else ""
                     prefix = "  > " if i == index else "    "
                     print(f"{prefix}{prov} ({model}){rec_str}")
+                prefix = "  > " if index == len(options) else "    "
+                print(f"{prefix}Quit")
                 key = wait_key()
                 if key == "quit":
                     raise SystemExit(exit_code)
                 if key == "enter":
+                    if index == len(options):
+                        raise SystemExit(exit_code)
                     break
                 if key == "up":
-                    index = (index - 1) % len(options)
+                    index = (index - 1) % total_rows
                 elif key == "down":
-                    index = (index + 1) % len(options)
-                sys.stdout.write("\033[%dA\033[0J" % len(options))
+                    index = (index + 1) % total_rows
+                sys.stdout.write("\033[%dA\033[0J" % total_rows)
                 sys.stdout.flush()
             selected = (options[index][0], options[index][1])
         else:
