@@ -13,6 +13,7 @@ from planforge.utils.prompt import load_prompt
 
 
 CODEX_NOT_FOUND_MSG = "codex not found in PATH or common locations. Install: npm install -g @openai/codex"
+CODEX_ONE_TURN_TIMEOUT_S = 300
 
 
 def _resolve_codex_exe() -> str | None:
@@ -34,6 +35,31 @@ def complete_one_turn(
     cwd = cwd or os.getcwd()
     full_prompt = system_prompt.strip() + "\n\n---\n\nUser: " + user_message.strip()
     return _run_codex_exec(full_prompt, cwd, allow_plan_fallback=False)
+
+
+def stream_one_turn(
+    system_prompt: str,
+    user_message: str,
+    on_chunk,
+    *,
+    cwd: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Stream a single doctor-ai turn through the callback and return the full response."""
+    del model
+    cwd = cwd or os.getcwd()
+    full_prompt = system_prompt.strip() + "\n\n---\n\nUser: " + user_message.strip()
+    try:
+        return _run_codex_exec_streaming(
+            full_prompt,
+            cwd,
+            allow_plan_fallback=False,
+            write_stdout=False,
+            on_chunk=on_chunk,
+            timeout=CODEX_ONE_TURN_TIMEOUT_S,
+        )
+    except Exception as e:
+        raise RuntimeError("Codex stream_one_turn failed: " + str(e)) from e
 
 
 def _looks_like_plan(stdout: str) -> bool:
@@ -108,7 +134,13 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
 
 
 def _run_codex_exec_streaming(
-    full_prompt: str, cwd: str, *, allow_plan_fallback: bool = False
+    full_prompt: str,
+    cwd: str,
+    *,
+    allow_plan_fallback: bool = False,
+    write_stdout: bool = True,
+    on_chunk=None,
+    timeout: int | None = None,
 ) -> str:
     """Run codex exec with streaming: forward stdout/stderr to the current process so the user
     sees logs in real time. Returns collected stdout when done. When allow_plan_fallback is True
@@ -125,8 +157,11 @@ def _run_codex_exec_streaming(
             return
         for line in iter(proc.stdout.readline, ""):
             stdout_chunks.append(line)
-            sys.stdout.write(line)
-            sys.stdout.flush()
+            if on_chunk is not None:
+                on_chunk(line)
+            if write_stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
 
     def read_stderr(proc: subprocess.Popen) -> None:
         if proc.stderr is None:
@@ -172,7 +207,11 @@ def _run_codex_exec_streaming(
     t_err.daemon = True
     t_out.start()
     t_err.start()
-    proc.wait()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        raise RuntimeError(f"Codex streaming timed out after {timeout}s") from exc
 
     if temp_path is not None:
         try:

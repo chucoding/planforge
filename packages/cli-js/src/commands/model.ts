@@ -6,11 +6,13 @@ import { existsSync } from "fs";
 import fs from "fs-extra";
 import { resolve } from "path";
 import { getProjectRoot, getModelsJsonPath } from "../utils/paths.js";
+import { printCurrentAiConfig, selectFromList } from "../utils/tui.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
+import { getDefaultConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
 
-interface ModelsCatalog {
+export interface ModelsCatalog {
   modes: string[];
   modeProviders: Record<string, string[]>;
   providers: Record<
@@ -24,7 +26,7 @@ interface ModelsCatalog {
   >;
 }
 
-function loadModelsCatalog(): ModelsCatalog {
+export function loadModelsCatalog(): ModelsCatalog {
   const path = getModelsJsonPath();
   const fallback = resolve(getProjectRoot(), "packages", "core", "models.json");
   const filePath = existsSync(path) ? path : existsSync(fallback) ? fallback : null;
@@ -36,99 +38,21 @@ function loadModelsCatalog(): ModelsCatalog {
   return fs.readJsonSync(filePath) as ModelsCatalog;
 }
 
-type KeyAction = "up" | "down" | "left" | "right" | "enter" | "quit" | null;
-
-function waitKey(): Promise<KeyAction> {
-  return new Promise((resolveKey) => {
-    if (!process.stdin.isTTY) {
-      resolveKey(null);
-      return;
-    }
-    const wasRaw = process.stdin.isRaw;
-    process.stdin.setRawMode?.(true);
-    process.stdin.resume();
-    process.stdin.setEncoding("utf8");
-    let buf = "";
-
-    const resolveAndClean = (action: KeyAction) => {
-      cleanup();
-      resolveKey(action);
-    };
-
-    const onData = (chunk: string | Buffer) => {
-      buf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
-      const s = buf;
-
-      if (s === "\r" || s === "\n") {
-        buf = "";
-        resolveAndClean("enter");
-        return;
-      }
-      if (s === "\u0003") {
-        buf = "";
-        resolveAndClean("quit");
-        return;
-      }
-      // Arrow keys: full sequence (e.g. \x1b[A) or split (\x1b then [ then A)
-      if (s.startsWith("\x1b[") && s.length >= 3) {
-        const c = s[2];
-        buf = s.length > 3 ? s.slice(3) : "";
-        if (c === "A") resolveAndClean("up");
-        else if (c === "B") resolveAndClean("down");
-        else if (c === "C") resolveAndClean("right");
-        else if (c === "D") resolveAndClean("left");
-        else resolveAndClean(null);
-        return;
-      }
-      if (s === "\x1b" || (s.startsWith("\x1b[") && s.length < 3)) {
-        return;
-      }
-      // Single char
-      if (s.length >= 1) {
-        const first = s[0];
-        buf = s.slice(1);
-        if (first === "w" || first === "k") resolveAndClean("up");
-        else if (first === "s" || first === "j") resolveAndClean("down");
-        else if (first === "a" || first === "h") resolveAndClean("left");
-        else if (first === "d" || first === "l") resolveAndClean("right");
-        else resolveAndClean(null);
-        return;
-      }
-    };
-
-    const cleanup = () => {
-      process.stdin.removeListener("data", onData);
-      if (!wasRaw) process.stdin.setRawMode?.(false);
-    };
-
-    process.stdin.on("data", onData);
-  });
-}
-
-async function runModelTui(
+/** Exported for planforge model: interactive mode => provider => model selection with effort/reasoning. */
+export async function runModelTui(
   catalog: ModelsCatalog,
   hasClaude: boolean,
-  hasCodex: boolean
+  hasCodex: boolean,
+  defaultConfig?: PlanForgeConfig
 ): Promise<{ mode: string; config: Record<string, string> } | null> {
   const { modes, modeProviders, providers } = catalog;
 
-  // Step 1: mode
-  let modeIndex = 0;
-  console.log("\n  Mode: [Up/Down]  Enter to confirm\n");
-  while (true) {
-    for (let i = 0; i < modes.length; i++) {
-      console.log((i === modeIndex ? "  > " : "    ") + modes[i]);
-    }
-    const key = await waitKey();
-    if (key === "quit") return null;
-    if (key === "enter") break;
-    if (key === "up") modeIndex = (modeIndex - 1 + modes.length) % modes.length;
-    if (key === "down") modeIndex = (modeIndex + 1) % modes.length;
-    if (key === "up" || key === "down") {
-      process.stdout.write(`\x1b[${modes.length}A\x1b[0J`);
-    }
-  }
-  const mode = modes[modeIndex];
+  const mode = await selectFromList(
+    modes.map((m) => ({ label: m, value: m })),
+    "Mode: [Up/Down]  Enter to confirm"
+  );
+  if (mode === null) return null;
+
   const providerIds = modeProviders[mode] ?? Object.keys(providers);
   const available = providerIds.filter(
     (p) => (p === "claude" && hasClaude) || (p === "codex" && hasCodex)
@@ -138,28 +62,19 @@ async function runModelTui(
     return null;
   }
 
-  // Step 2: provider (skip if single)
   let providerId: string;
   if (available.length === 1) {
     providerId = available[0];
   } else {
-    let provIndex = 0;
-    console.log("\n  Provider: [Up/Down]  Enter to confirm\n");
-    while (true) {
-      for (let i = 0; i < available.length; i++) {
-        const name = providers[available[i]]?.name ?? available[i];
-        console.log((i === provIndex ? "  > " : "    ") + `${name} (${available[i]})`);
-      }
-      const key = await waitKey();
-      if (key === "quit") return null;
-      if (key === "enter") break;
-      if (key === "up") provIndex = (provIndex - 1 + available.length) % available.length;
-      if (key === "down") provIndex = (provIndex + 1) % available.length;
-      if (key === "up" || key === "down") {
-        process.stdout.write(`\x1b[${available.length}A\x1b[0J`);
-      }
-    }
-    providerId = available[provIndex];
+    const chosen = await selectFromList(
+      available.map((id) => ({
+        label: `${providers[id]?.name ?? id} (${id})`,
+        value: id,
+      })),
+      "Provider: [Up/Down]  Enter to confirm"
+    );
+    if (chosen === null) return null;
+    providerId = chosen;
   }
 
   const prov = providers[providerId];
@@ -172,44 +87,46 @@ async function runModelTui(
     return null;
   }
 
-  // Step 3a: model selection (Up/Down, Enter to confirm)
-  let modelIndex = 0;
-  console.log("\n  [Up/Down] model  Enter to confirm\n");
-  while (true) {
-    for (let i = 0; i < models.length; i++) {
-      console.log((i === modelIndex ? "  > " : "    ") + `${models[i].label} (${models[i].id})`);
-    }
-    const key = await waitKey();
-    if (key === "quit") return null;
-    if (key === "enter") break;
-    if (key === "up") modelIndex = (modelIndex - 1 + models.length) % models.length;
-    if (key === "down") modelIndex = (modelIndex + 1) % models.length;
-    process.stdout.write(`\x1b[${models.length}A\x1b[0J`);
-  }
+  const defaultModelId =
+    defaultConfig &&
+    (mode === "planner" && defaultConfig.planner.provider === providerId
+      ? defaultConfig.planner.model
+      : mode === "implementer" && defaultConfig.implementer.provider === providerId
+        ? defaultConfig.implementer.model
+        : undefined);
 
-  // Step 3b: Effort (Claude) or Reasoning (Codex) selection (Up/Down, Enter to confirm)
-  const opts = isClaude ? effortOpts : reasoningOpts;
-  const label = isClaude ? "Effort" : "Reasoning";
-  let optIndex = Math.min(1, opts.length - 1);
-  console.log(`\n  [Up/Down] ${label}  Enter to confirm\n`);
-  while (true) {
-    for (let i = 0; i < opts.length; i++) {
-      console.log((i === optIndex ? "  > " : "    ") + opts[i]);
-    }
-    const key = await waitKey();
-    if (key === "quit") return null;
-    if (key === "enter") break;
-    if (key === "up") optIndex = (optIndex - 1 + opts.length) % opts.length;
-    if (key === "down") optIndex = (optIndex + 1) % opts.length;
-    process.stdout.write(`\x1b[${opts.length}A\x1b[0J`);
+  const modelId = await selectFromList(
+    models.map((m) => ({
+      label: `${m.label} (${m.id})${defaultModelId != null && m.id === defaultModelId ? "  (recommended)" : ""}`,
+      value: m.id,
+    })),
+    "[Up/Down] model  Enter to confirm"
+  );
+  if (modelId === null) return null;
+
+  const selectedModel = models.find((m) => m.id === modelId) as
+    | { id: string; label: string; effort?: boolean }
+    | undefined;
+  const claudeSupportsEffort = isClaude && selectedModel?.effort !== false;
+  const opts = isClaude ? (claudeSupportsEffort ? effortOpts : []) : reasoningOpts;
+  const optLabel = isClaude ? "Effort" : "Reasoning";
+
+  let selectedOpt: string | null = null;
+  if (opts.length > 0) {
+    selectedOpt = await selectFromList(
+      opts.map((o) => ({ label: o, value: o })),
+      `[Up/Down] ${optLabel}  Enter to confirm`,
+      { initialIndex: Math.min(1, opts.length - 1) }
+    );
+    if (selectedOpt === null) return null;
   }
 
   const config: Record<string, string> = {
     provider: providerId,
-    model: models[modelIndex].id,
+    model: modelId,
   };
-  if (isClaude) config.effort = effortOpts[optIndex];
-  else config.reasoning = reasoningOpts[optIndex];
+  if (isClaude && claudeSupportsEffort && selectedOpt != null) config.effort = selectedOpt;
+  else if (!isClaude && selectedOpt != null) config.reasoning = selectedOpt;
   return { mode, config };
 }
 
@@ -227,13 +144,28 @@ export async function runModel(_args: string[]): Promise<void> {
 
   const hasClaude = checkClaude();
   const hasCodex = checkCodex();
+  let defaultConfig: PlanForgeConfig | undefined;
+  try {
+    defaultConfig = getDefaultConfig(hasClaude, hasCodex);
+  } catch {
+    defaultConfig = undefined;
+  }
 
   if (!process.stdin.isTTY) {
     console.error("planforge model requires an interactive terminal.");
     process.exit(1);
   }
 
-  const selected = await runModelTui(catalog, hasClaude, hasCodex);
+  if (await fs.pathExists(configPath)) {
+    try {
+      const data = (await fs.readJson(configPath)) as PlanForgeConfig;
+      printCurrentAiConfig(data);
+    } catch {
+      // ignore; do not block model TUI
+    }
+  }
+
+  const selected = await runModelTui(catalog, hasClaude, hasCodex, defaultConfig);
   if (selected === null) {
     process.exit(0);
   }

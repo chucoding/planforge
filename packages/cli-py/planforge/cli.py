@@ -3,7 +3,7 @@
 
 import click
 from planforge.commands.init import run_init
-from planforge.commands.doctor import run_doctor
+from planforge.commands.doctor import run_doctor, run_doctor_mode_select
 from planforge.commands.install import run_install
 from planforge.commands.plan import run_plan
 from planforge.commands.implement import run_implement
@@ -26,16 +26,22 @@ def init(skip_provider_install: bool) -> None:
 @main.group(invoke_without_command=True)
 @click.pass_context
 def doctor(ctx: click.Context) -> None:
-    """Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .planforge/plans, and .planforge/contexts."""
+    """Check environment or run AI workflow tests (static / ai)."""
     if ctx.invoked_subcommand is None:
-        run_doctor([])
+        run_doctor_mode_select()
+
+
+@doctor.command("static")
+def doctor_static() -> None:
+    """Check environment and providers (Claude/Codex CLI, planforge.json, .planforge)."""
+    run_doctor([])
 
 
 @doctor.command("ai")
 @click.option("--provider", help="Use this provider (skip interactive selection)")
 @click.option("--model", help="Use this model (use with --provider)")
 def doctor_ai(provider: str | None, model: str | None) -> None:
-    """Run workflow compliance tests with AI (select model, then run TC1/TC2)."""
+    """Run workflow compliance tests with AI (select planner/implementer, run TC1/TC2/TC3)."""
     args: list[str] = []
     if provider:
         args.extend(["--provider", provider])

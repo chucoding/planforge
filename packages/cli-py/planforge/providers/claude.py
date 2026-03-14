@@ -6,17 +6,27 @@ import sys
 import tempfile
 import threading
 from pathlib import Path
+from typing import Callable
 
 from planforge.utils.shell import has_command, resolve_command_path_with_npm_fallback
 from planforge.utils.paths import get_prompts_dir
 from planforge.utils.prompt import load_prompt
+
+CLAUDE_ONE_TURN_TIMEOUT_S = 120
 
 
 def _resolve_claude_exe() -> str | None:
     return resolve_command_path_with_npm_fallback("claude")
 
 
-def _run_claude_streaming(full_prompt: str, cwd: str) -> str:
+def _run_claude_streaming(
+    full_prompt: str,
+    cwd: str,
+    *,
+    write_stdout: bool = True,
+    on_chunk: Callable[[str], None] | None = None,
+    timeout: int | None = None,
+) -> str:
     """Run Claude with streaming: forward stdout/stderr to the current process so the user
     sees logs in real time. Returns collected stdout when done.
     On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd directly (CVE-2024-27980).
@@ -68,8 +78,11 @@ def _run_claude_streaming(full_prompt: str, cwd: str) -> str:
             return
         for line in iter(p.stdout.readline, ""):
             stdout_chunks.append(line)
-            sys.stdout.write(line)
-            sys.stdout.flush()
+            if on_chunk is not None:
+                on_chunk(line)
+            if write_stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
 
     def read_stderr(p: subprocess.Popen) -> None:
         if p.stderr is None:
@@ -84,7 +97,11 @@ def _run_claude_streaming(full_prompt: str, cwd: str) -> str:
     t_err.daemon = True
     t_out.start()
     t_err.start()
-    proc.wait()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        raise RuntimeError(f"Claude streaming timed out after {timeout}s") from exc
 
     if temp_path is not None:
         try:
@@ -159,6 +176,129 @@ def complete_one_turn(
         msg = result.stderr or result.stdout or "Claude exited non-zero"
         raise RuntimeError("Claude complete_one_turn failed: " + msg)
     return (result.stdout or "").strip()
+
+
+def stream_one_turn(
+    system_prompt: str,
+    user_message: str,
+    on_chunk,
+    *,
+    cwd: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Stream a single doctor-ai turn through the callback and return the full response."""
+    cwd = cwd or os.getcwd()
+    exe = _resolve_claude_exe()
+    if not exe:
+        raise RuntimeError(
+            "claude not found in PATH or common locations. Install: npm install -g @anthropic-ai/claude-code"
+        )
+    full_prompt = system_prompt.strip() + "\n\n---\n\nUser: " + user_message.strip()
+
+    try:
+        if os.name == "nt":
+            fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-claude-")
+            try:
+                os.write(fd, full_prompt.encode("utf-8"))
+                os.close(fd)
+                escaped = temp_path.replace("'", "''")
+                escaped_exe = exe.replace("'", "''")
+                model_arg = " --model '" + model.replace("'", "''") + "'" if model else ""
+                script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | & '{escaped_exe}'{model_arg}"
+                proc = subprocess.Popen(
+                    ["powershell", "-NoProfile", "-Command", script],
+                    cwd=cwd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+            except Exception:
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+                raise
+            return _collect_streamed_process_output(
+                proc,
+                temp_path=temp_path,
+                write_stdout=False,
+                on_chunk=on_chunk,
+                timeout=CLAUDE_ONE_TURN_TIMEOUT_S,
+            )
+
+        args = ["--system-prompt", system_prompt.strip(), "-p", user_message.strip()]
+        if model:
+            args = ["--model", model] + args
+        proc = subprocess.Popen(
+            [exe] + args,
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        return _collect_streamed_process_output(
+            proc,
+            write_stdout=False,
+            on_chunk=on_chunk,
+            timeout=CLAUDE_ONE_TURN_TIMEOUT_S,
+        )
+    except Exception as e:
+        raise RuntimeError("Claude stream_one_turn failed: " + str(e)) from e
+
+
+def _collect_streamed_process_output(
+    proc: subprocess.Popen,
+    *,
+    temp_path: str | None = None,
+    write_stdout: bool,
+    on_chunk,
+    timeout: int | None,
+) -> str:
+    stdout_chunks: list[str] = []
+
+    def read_stdout(p: subprocess.Popen) -> None:
+        if p.stdout is None:
+            return
+        for line in iter(p.stdout.readline, ""):
+            stdout_chunks.append(line)
+            if on_chunk is not None:
+                on_chunk(line)
+            if write_stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+
+    def read_stderr(p: subprocess.Popen) -> None:
+        if p.stderr is None:
+            return
+        for line in iter(p.stderr.readline, ""):
+            sys.stderr.write(line)
+            sys.stderr.flush()
+
+    t_out = threading.Thread(target=read_stdout, args=(proc,))
+    t_err = threading.Thread(target=read_stderr, args=(proc,))
+    t_out.daemon = True
+    t_err.daemon = True
+    t_out.start()
+    t_err.start()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        raise RuntimeError(f"Claude streaming timed out after {timeout}s") from exc
+    finally:
+        if temp_path is not None:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+
+    t_out.join(timeout=1.0)
+    t_err.join(timeout=1.0)
+
+    out = "".join(stdout_chunks).strip()
+    if proc.returncode != 0:
+        raise RuntimeError("Claude exited with code " + str(proc.returncode))
+    return out
 
 
 def run_plan(goal: str, opts: dict | None = None) -> str:

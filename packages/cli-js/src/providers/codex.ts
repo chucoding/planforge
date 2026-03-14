@@ -42,6 +42,14 @@ export interface CompleteOneTurnOpts {
   model?: string;
 }
 
+interface StreamExecOpts {
+  writeStdout?: boolean;
+  onChunk?: (chunk: string) => void;
+  timeoutMs?: number;
+}
+
+const CODEX_ONE_TURN_TIMEOUT_MS = 300_000;
+
 /**
  * Single-turn completion for doctor ai workflow tests. Sends systemPrompt + userMessage and returns response text.
  */
@@ -53,6 +61,28 @@ export async function completeOneTurn(
   const cwd = opts?.cwd ?? process.cwd();
   const fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser: " + userMessage.trim();
   return runCodexExec(fullPrompt, cwd, false);
+}
+
+export async function streamOneTurn(
+  systemPrompt: string,
+  userMessage: string,
+  onChunk: (chunk: string) => void,
+  opts?: CompleteOneTurnOpts
+): Promise<string> {
+  const cwd = opts?.cwd ?? process.cwd();
+  const fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser: " + userMessage.trim();
+  try {
+    return await runCodexExecStreaming(fullPrompt, cwd, false, {
+      writeStdout: false,
+      onChunk,
+      timeoutMs: CODEX_ONE_TURN_TIMEOUT_MS,
+    });
+  } catch (err) {
+    const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
+      ?? (err as { stderr?: string }).stderr
+      ?? (err as Error).message;
+    throw new Error("Codex streamOneTurn failed: " + msg);
+  }
 }
 
 /**
@@ -133,26 +163,53 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
  * When allowPlanFallback is true (plan only), exit code 1 may still resolve with collected
  * stdout if it looks like a plan (e.g. Codex 1 due to rollout/cache).
  */
-function runCodexExecStreaming(fullPrompt: string, cwd: string, allowPlanFallback = false): Promise<string> {
+function runCodexExecStreaming(
+  fullPrompt: string,
+  cwd: string,
+  allowPlanFallback = false,
+  streamOpts?: StreamExecOpts
+): Promise<string> {
   const exe = resolveCodexExe();
   if (!exe) return Promise.reject(new Error(CODEX_NOT_FOUND_MSG));
 
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
     const opts = { cwd };
+    const writeStdout = streamOpts?.writeStdout ?? true;
+    let settled = false;
 
     const finish = (code: number | null) => {
+      if (settled) return;
       const out = Buffer.concat(chunks).toString("utf-8").trim();
       if (code === 0) {
+        settled = true;
         resolve(out);
         return;
       }
       if (allowPlanFallback && code === 1 && looksLikePlan(out)) {
         console.error("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.");
+        settled = true;
         resolve(out);
         return;
       }
-      reject(new Error("Codex exited with code " + code));
+      const stderr = Buffer.concat(stderrChunks).toString("utf-8").trim();
+      settled = true;
+      reject(new Error(stderr || "Codex exited with code " + code));
+    };
+
+    const handleStdout = (chunk: Buffer) => {
+      chunks.push(chunk);
+      const text = chunk.toString("utf-8");
+      streamOpts?.onChunk?.(text);
+      if (writeStdout) {
+        process.stdout.write(chunk);
+      }
+    };
+
+    const handleStderr = (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+      process.stderr.write(chunk);
     };
 
     if (process.platform === "win32") {
@@ -165,7 +222,15 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string, allowPlanFallbac
         ...opts,
         stdio: ["ignore", "pipe", "pipe"],
       });
+      const timeout = setTimeout(() => {
+        child.kill();
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Codex streaming timed out after ${Math.floor((streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS) / 1000)}s`));
+        }
+      }, streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS);
       child.on("close", (code) => {
+        clearTimeout(timeout);
         try {
           unlinkSync(tempPath);
         } catch {
@@ -173,12 +238,14 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string, allowPlanFallbac
         }
         finish(code);
       });
-      child.stdout?.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-        process.stdout.write(chunk);
-      });
-      child.stderr?.on("data", (chunk: Buffer) => {
-        process.stderr.write(chunk);
+      child.stdout?.on("data", handleStdout);
+      child.stderr?.on("data", handleStderr);
+      child.on("error", (err) => {
+        clearTimeout(timeout);
+        if (!settled) {
+          settled = true;
+          reject(err);
+        }
       });
       return;
     }
@@ -187,15 +254,26 @@ function runCodexExecStreaming(fullPrompt: string, cwd: string, allowPlanFallbac
       ...opts,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.stdout?.on("data", (chunk: Buffer) => {
-      chunks.push(chunk);
-      process.stdout.write(chunk);
+    const timeout = setTimeout(() => {
+      child.kill();
+      if (!settled) {
+        settled = true;
+        reject(new Error(`Codex streaming timed out after ${Math.floor((streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS) / 1000)}s`));
+      }
+    }, streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS);
+    child.stdout?.on("data", handleStdout);
+    child.stderr?.on("data", handleStderr);
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      finish(code);
     });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      process.stderr.write(chunk);
+    child.on("error", (err) => {
+      clearTimeout(timeout);
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
     });
-    child.on("close", (code) => finish(code));
-    child.on("error", (err) => reject(err));
   });
 }
 

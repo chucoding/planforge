@@ -5,7 +5,7 @@
 
 import { Command } from "commander";
 import { runInit } from "./commands/init.js";
-import { runDoctor, runDoctorAi } from "./commands/doctor.js";
+import { runDoctor, runDoctorModeSelect, runDoctorAi } from "./commands/doctor.js";
 import { runInstall } from "./commands/install.js";
 import { runPlan } from "./commands/plan.js";
 import { runImplement } from "./commands/implement.js";
@@ -29,13 +29,19 @@ program
 
 const doctorCmd = program
   .command("doctor")
-  .description("Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .planforge/plans, and .planforge/contexts");
+  .description("Check environment or run AI workflow tests (static / ai)");
 doctorCmd.action(async () => {
-  await runDoctor([]);
+  await runDoctorModeSelect();
 });
 doctorCmd
+  .command("static")
+  .description("Check environment and providers (Claude/Codex CLI, planforge.json, .planforge)")
+  .action(async () => {
+    await runDoctor([]);
+  });
+doctorCmd
   .command("ai")
-  .description("Run workflow compliance tests with AI (select model, then run TC1/TC2)")
+  .description("Run workflow compliance tests with AI (select planner/implementer, run TC1/TC2/TC3)")
   .option("--provider <name>", "Use this provider (skip interactive selection)")
   .option("--model <name>", "Use this model (use with --provider)")
   .action(async (opts: { provider?: string; model?: string }) => {
