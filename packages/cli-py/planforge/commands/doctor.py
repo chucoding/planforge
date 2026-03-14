@@ -236,6 +236,17 @@ def run_doctor(args: list[str]) -> None:
         "exists" if has_context_dir else "missing (run planforge init)",
     ))
 
+    rules_dir = Path(project_root) / ".cursor" / "rules"
+    planforge_rule_files = ["planforge-workflow.mdc", "planforge-cursor-agent-terminal.mdc"]
+    for rule_file in planforge_rule_files:
+        rule_path = rules_dir / rule_file
+        has_rule = rule_path.exists()
+        checks.append((
+            f".cursor/rules/{rule_file}",
+            "ok" if has_rule else "warn",
+            "exists" if has_rule else "missing (run planforge install)",
+        ))
+
     if has_plans_dir:
         plan_root = Path(plans_dir)
         root_entries = list(plan_root.iterdir())
@@ -283,13 +294,14 @@ def run_doctor(args: list[str]) -> None:
 
     if any(status == "error" for _, status, _ in checks):
         raise SystemExit(1)
+    sys.exit(0)
 
 
 def _load_workflow_mdc(project_root: str) -> str:
-    installed = Path(project_root) / ".cursor" / "rules" / "workflow.mdc"
+    installed = Path(project_root) / ".cursor" / "rules" / "planforge-workflow.mdc"
     if installed.exists():
         return installed.read_text(encoding="utf-8")
-    templates_path = Path(get_templates_root()) / "cursor" / "rules" / "workflow.mdc"
+    templates_path = Path(get_templates_root()) / "cursor" / "rules" / "planforge-workflow.mdc"
     if templates_path.exists():
         return templates_path.read_text(encoding="utf-8")
     raise FileNotFoundError(

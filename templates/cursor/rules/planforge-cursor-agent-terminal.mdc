@@ -1,0 +1,11 @@
+---
+description: PlanForge — avoid Cursor agent terminal default timeout (~30s) for plan/implement
+globs:
+alwaysApply: true
+---
+
+# PlanForge: Cursor Agent Terminal (plan/implement)
+
+- When running **planforge plan** or **planforge implement**, avoid hitting the Cursor agent terminal default timeout (~30s).
+- Run those commands with **block_until_ms** (or equivalent max-wait parameter) set to **300000** (5 minutes) or more, since plan/implement may take 1–5 minutes.
+- If the environment does not support that parameter, note that the rule cannot change the limit; when needed, tell the user they can run `planforge plan` / `planforge implement` in a local terminal to see streaming to completion.
