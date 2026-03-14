@@ -17,6 +17,49 @@ from planforge.providers.codex import check_codex, complete_one_turn as codex_co
 from planforge.utils.tui import wait_key
 from planforge.commands.model import _load_models_catalog
 
+DOCTOR_MODE_STATIC = "static"
+DOCTOR_MODE_AI = "ai"
+
+
+def run_doctor_mode_select() -> None:
+    """When doctor is run without subcommand: TTY shows mode selection (static/ai) with descriptions; non-TTY runs static."""
+    if not sys.stdin.isatty():
+        run_doctor([])
+        return
+    modes = [
+        ("static", "Check environment and providers"),
+        ("ai", "Run workflow tests with AI"),
+    ]
+    total_rows = len(modes) + 1
+    index = 0
+    print("\n  Mode  [Up/Down]  Enter to confirm\n")
+    while True:
+        for i, (label, desc) in enumerate(modes):
+            prefix = "  > " if i == index else "    "
+            print(f"{prefix}{label}  –  {desc}")
+        prefix = "  > " if index == len(modes) else "    "
+        print(f"{prefix}Quit")
+        key = wait_key()
+        if key == "quit":
+            sys.exit(0)
+        if key == "enter":
+            if index == len(modes):
+                sys.exit(0)
+            chosen = modes[index][0]
+            if chosen == DOCTOR_MODE_STATIC:
+                run_doctor([])
+                return
+            if chosen == DOCTOR_MODE_AI:
+                run_doctor_ai([])
+                return
+            return
+        if key == "up":
+            index = (index - 1) % total_rows
+        elif key == "down":
+            index = (index + 1) % total_rows
+        sys.stdout.write("\033[%dA\033[0J" % total_rows)
+        sys.stdout.flush()
+
 
 def _status_symbol(status: str) -> str:
     if status == "ok":
@@ -363,7 +406,7 @@ def run_doctor_ai(args: list[str]) -> None:
             impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
             print("\n  Current AI config")
             print("  -----------------")
-            print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}  (recommended)")
+            print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}")
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
 
             modes = ["planner", "implementer"]
@@ -405,25 +448,23 @@ def run_doctor_ai(args: list[str]) -> None:
                 selected_planner = second_sel
                 selected_implementer = first_sel
         elif sys.stdin.isatty():
-            planner_key = f"{config.planner.get('provider', '')}|{config.planner.get('model', '')}"
-            options = [(p, m, (p + "|" + m) == planner_key) for (p, m, _) in options]
+            # Fallback: flat list when catalog missing (no recommended; doctor ai recommended = cheapest only in catalog flow)
             pl = config.planner
             impl = config.implementer
             pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
             impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
             print("\n  Current AI config")
             print("  -----------------")
-            print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}  (recommended)")
+            print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}")
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
             print("")
             print("  Select AI for workflow test  [Up/Down]  Enter to confirm\n")
             total_rows = len(options) + 1
             index = 0
             while True:
-                for i, (prov, model, rec) in enumerate(options):
-                    rec_str = "  (recommended)" if rec else ""
+                for i, (prov, model, _rec) in enumerate(options):
                     prefix = "  > " if i == index else "    "
-                    print(f"{prefix}{prov} ({model}){rec_str}")
+                    print(f"{prefix}{prov} ({model})")
                 prefix = "  > " if index == len(options) else "    "
                 print(f"{prefix}Quit")
                 key = wait_key()

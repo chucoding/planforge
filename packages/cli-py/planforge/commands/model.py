@@ -5,6 +5,7 @@ import sys
 from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_models_json_path
+from planforge.utils.config import get_default_config
 from planforge.utils.tui import wait_key
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
@@ -18,7 +19,13 @@ def _load_models_catalog() -> dict:
         return json.load(f)
 
 
-def _run_model_tui(catalog: dict, project_root: str, has_claude: bool, has_codex: bool) -> tuple[str, dict] | None:
+def _run_model_tui(
+    catalog: dict,
+    project_root: str,
+    has_claude: bool,
+    has_codex: bool,
+    default_config: dict | None = None,
+) -> tuple[str, dict] | None:
     """Interactive TUI: mode => provider => model + effort/reasoning. Returns (mode, role_config) or None if quit."""
     modes = catalog.get("modes", ["planner", "implementer"])
     mode_providers = catalog.get("modeProviders", {})
@@ -84,14 +91,20 @@ def _run_model_tui(catalog: dict, project_root: str, has_claude: bool, has_codex
         print("No models defined for this provider.", file=sys.stderr)
         return None
 
-    # Step 3a: model selection (Up/Down, Enter to confirm). Last model = cheapest, shown as (recommended).
+    # Step 3a: model selection (Up/Down, Enter to confirm). Recommended = default config for this mode (config/default-*.json).
+    default_model_id = None
+    if default_config and mode in default_config:
+        role = default_config[mode]
+        if isinstance(role, dict) and role.get("provider") == provider_id:
+            default_model_id = role.get("model")
     model_index = 0
     print("\n  [Up/Down] model  Enter to confirm\n")
     while True:
         for i, m in enumerate(models):
             prefix = "  > " if i == model_index else "    "
-            rec = "  (recommended)" if i == len(models) - 1 else ""
-            print(f"{prefix}{m['label']} ({m['id']}){rec}")
+            mid = m.get("id", "")
+            rec = "  (recommended)" if default_model_id and mid == default_model_id else ""
+            print(f"{prefix}{m['label']} ({mid}){rec}")
         key = wait_key()
         if key == "quit":
             return None
@@ -153,12 +166,17 @@ def run_model(args: list[str]) -> None:
 
     has_claude = check_claude()
     has_codex = check_codex()
+    default_config = None
+    try:
+        default_config = get_default_config(has_claude, has_codex)
+    except (FileNotFoundError, OSError):
+        pass
 
     if not sys.stdin.isatty():
         print("planforge model requires an interactive terminal.", file=sys.stderr)
         raise SystemExit(1)
 
-    selected = _run_model_tui(catalog, project_root, has_claude, has_codex)
+    selected = _run_model_tui(catalog, project_root, has_claude, has_codex, default_config)
     if selected is None:
         raise SystemExit(0)
 

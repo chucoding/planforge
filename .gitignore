@@ -16,6 +16,7 @@ __pycache__
 .DS_Store
 
 # cursor / planforge
+planforge.json
 .planforge/plans
 .planforge/contexts    
 .cursor/rules/code-comments.mdc

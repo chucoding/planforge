@@ -9,6 +9,7 @@ import { getProjectRoot, getModelsJsonPath } from "../utils/paths.js";
 import { waitKey } from "../utils/tui.js";
 import { checkClaude } from "../providers/claude.js";
 import { checkCodex } from "../providers/codex.js";
+import { getDefaultConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
 
 export interface ModelsCatalog {
@@ -41,7 +42,8 @@ export function loadModelsCatalog(): ModelsCatalog {
 export async function runModelTui(
   catalog: ModelsCatalog,
   hasClaude: boolean,
-  hasCodex: boolean
+  hasCodex: boolean,
+  defaultConfig?: PlanForgeConfig
 ): Promise<{ mode: string; config: Record<string, string> } | null> {
   const { modes, modeProviders, providers } = catalog;
 
@@ -105,12 +107,19 @@ export async function runModelTui(
     return null;
   }
 
-  // Step 3a: model selection (Up/Down, Enter to confirm). Last model = cheapest, shown as (recommended).
+  // Step 3a: model selection (Up/Down, Enter to confirm). Recommended = default config for this mode (config/default-*.json).
+  const defaultModelId =
+    defaultConfig &&
+    (mode === "planner" && defaultConfig.planner.provider === providerId
+      ? defaultConfig.planner.model
+      : mode === "implementer" && defaultConfig.implementer.provider === providerId
+        ? defaultConfig.implementer.model
+        : undefined);
   let modelIndex = 0;
   console.log("\n  [Up/Down] model  Enter to confirm\n");
   while (true) {
     for (let i = 0; i < models.length; i++) {
-      const rec = i === models.length - 1 ? "  (recommended)" : "";
+      const rec = defaultModelId != null && models[i].id === defaultModelId ? "  (recommended)" : "";
       console.log((i === modelIndex ? "  > " : "    ") + `${models[i].label} (${models[i].id})${rec}`);
     }
     const key = await waitKey();
@@ -161,13 +170,19 @@ export async function runModel(_args: string[]): Promise<void> {
 
   const hasClaude = checkClaude();
   const hasCodex = checkCodex();
+  let defaultConfig: PlanForgeConfig | undefined;
+  try {
+    defaultConfig = getDefaultConfig(hasClaude, hasCodex);
+  } catch {
+    defaultConfig = undefined;
+  }
 
   if (!process.stdin.isTTY) {
     console.error("planforge model requires an interactive terminal.");
     process.exit(1);
   }
 
-  const selected = await runModelTui(catalog, hasClaude, hasCodex);
+  const selected = await runModelTui(catalog, hasClaude, hasCodex, defaultConfig);
   if (selected === null) {
     process.exit(0);
   }

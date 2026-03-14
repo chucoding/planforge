@@ -45,6 +45,50 @@ function isDatedPlanFileName(name: string): boolean {
   return /^\d{4}-.+\.plan\.md$/.test(name);
 }
 
+const DOCTOR_MODE_STATIC = "static";
+const DOCTOR_MODE_AI = "ai";
+
+/** When doctor is run without subcommand: TTY shows mode selection (static/ai) with descriptions; non-TTY runs static. */
+export async function runDoctorModeSelect(): Promise<void> {
+  if (!process.stdin.isTTY) {
+    await runDoctor([]);
+    return;
+  }
+  const modes: { id: string; label: string; description: string }[] = [
+    { id: DOCTOR_MODE_STATIC, label: "static", description: "Check environment and providers" },
+    { id: DOCTOR_MODE_AI, label: "ai", description: "Run workflow tests with AI" },
+  ];
+  const totalRows = modes.length + 1; // +1 Quit
+  let index = 0;
+  console.log("\n  Mode  [Up/Down]  Enter to confirm\n");
+  while (true) {
+    for (let i = 0; i < modes.length; i++) {
+      const m = modes[i];
+      const prefix = i === index ? "  > " : "    ";
+      console.log(prefix + m.label + "  –  " + m.description);
+    }
+    console.log((index === modes.length ? "  > " : "    ") + "Quit");
+    const key = await waitKey();
+    if (key === "quit") process.exit(0);
+    if (key === "enter") {
+      if (index === modes.length) process.exit(0);
+      const chosen = modes[index].id;
+      if (chosen === DOCTOR_MODE_STATIC) {
+        await runDoctor([]);
+        return;
+      }
+      if (chosen === DOCTOR_MODE_AI) {
+        await runDoctorAi([]);
+        return;
+      }
+      return;
+    }
+    if (key === "up") index = (index - 1 + totalRows) % totalRows;
+    if (key === "down") index = (index + 1) % totalRows;
+    process.stdout.write(`\x1b[${totalRows}A\x1b[0J`);
+  }
+}
+
 export async function runDoctor(_args: string[]): Promise<void> {
   const cwd = process.cwd();
   const projectRoot = getProjectRoot(cwd);
@@ -413,7 +457,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       const impl = config.implementer;
       const plExtra = pl.effort != null ? `effort: ${pl.effort}` : pl.reasoning != null ? `reasoning: ${pl.reasoning}` : undefined;
       const implExtra = impl.effort != null ? `effort: ${impl.effort}` : impl.reasoning != null ? `reasoning: ${impl.reasoning}` : undefined;
-      console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, true));
+      console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, false));
       console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
 
       const modes = ["planner", "implementer"];
@@ -452,18 +496,14 @@ export async function runDoctorAi(args: string[]): Promise<void> {
           ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
           : { provider: secondSel.provider, model: secondSel.model, recommended: false };
     } else if (process.stdin.isTTY) {
-      // Fallback: flat list when catalog missing
-      const plannerKey = config.planner.provider + "|" + config.planner.model;
-      for (const o of options) {
-        o.recommended = (o.provider + "|" + o.model) === plannerKey;
-      }
+      // Fallback: flat list when catalog missing (no recommended; doctor ai recommended = cheapest only in catalog flow)
       console.log("\n  Current AI config");
       console.log("  -----------------");
       const pl = config.planner;
       const impl = config.implementer;
       const plExtra = pl.effort != null ? `effort: ${pl.effort}` : pl.reasoning != null ? `reasoning: ${pl.reasoning}` : undefined;
       const implExtra = impl.effort != null ? `effort: ${impl.effort}` : impl.reasoning != null ? `reasoning: ${impl.reasoning}` : undefined;
-      console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, true));
+      console.log(formatRoleLine("planner", pl.provider, pl.model, plExtra, false));
       console.log(formatRoleLine("implementer", impl.provider, impl.model, implExtra, false));
       console.log("");
       console.log("  Select AI for workflow test  [Up/Down]  Enter to confirm\n");
@@ -472,8 +512,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       while (true) {
         for (let i = 0; i < options.length; i++) {
           const o = options[i];
-          const rec = o.recommended ? "  (recommended)" : "";
-          console.log((i === index ? "  > " : "    ") + `${o.provider} (${o.model})${rec}`);
+          console.log((i === index ? "  > " : "    ") + `${o.provider} (${o.model})`);
         }
         console.log((index === options.length ? "  > " : "    ") + "Quit");
         const key = await waitKey();
