@@ -38,6 +38,11 @@ def _fetch_url_content(url: str, timeout: int = FETCH_TIMEOUT_S) -> str:
         return ""
 
 
+def fetch_url_content(url: str, timeout: int = FETCH_TIMEOUT_S) -> str:
+    """Fetch a single URL and return body as string, or empty string on failure. Used by doctor URL test."""
+    return _fetch_url_content(url, timeout=timeout)
+
+
 def fetch_urls_context(goal: str) -> str | None:
     """Fetch all non-Notion URLs from goal and return a single markdown block for context, or None if none."""
     urls = extract_urls_from_goal(goal)

@@ -2,6 +2,10 @@
 
 import json
 import sys
+import threading
+import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from planforge.utils.paths import (
@@ -25,6 +29,23 @@ from planforge.utils.tui import print_current_ai_config, select_from_list
 from planforge.commands.model import _load_models_catalog
 
 DOCTOR_MODE_STATIC = "static"
+URL_TEST_URL = "https://httpbin.org/get"
+URL_TEST_TIMEOUT_S = 5
+
+
+def _run_url_fetch_tc() -> tuple[bool, str | None]:
+    """Run simple URL fetch test; return (passed, error_message or None). Surfaces real fetch errors."""
+    req = urllib.request.Request(URL_TEST_URL, headers={"User-Agent": "PlanForge-CLI/1.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=URL_TEST_TIMEOUT_S) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return (len(body) > 0, None)
+    except urllib.error.HTTPError as e:
+        return (False, f"HTTP {e.code}")
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        return (False, str(e))
+
+
 DOCTOR_MODE_AI = "ai"
 
 
@@ -41,27 +62,50 @@ def _run_streaming_doctor_tc(
     response = ""
     pass_shown = False
 
+    _dim = "\033[2m"
+    _reset = "\033[0m"
+    _pass_color = "\033[92m"
+    _fail_color = "\033[31m"
+    _check = "\u2713"
+    _cross = "\u2717"
+
     def render(suffix: str = "") -> None:
         normalized = " ".join(response.split())
         sys.stdout.write("\r\033[2K")
-        sys.stdout.write(f"    response: {normalized}{suffix}")
+        sys.stdout.write(f"    {_dim}response:{_reset} {normalized}{suffix}")
         sys.stdout.flush()
 
-    print(f"  {label}")
-    sys.stdout.write("    response: ")
+    print(f"  \033[36m{label}{_reset}")
+    sys.stdout.write(f"    {_dim}response:{_reset} ")
     sys.stdout.flush()
+
+    spinner_stop = threading.Event()
+    spinner_frames = ["|", "/", "-", "\\"]
+
+    def _spinner_loop() -> None:
+        idx = 0
+        while not spinner_stop.is_set():
+            sys.stdout.write("\r\033[2K")
+            sys.stdout.write(f"    {_dim}response:{_reset} {spinner_frames[idx % 4]}")
+            sys.stdout.flush()
+            idx += 1
+            spinner_stop.wait(0.08)
 
     def _handle_chunk(chunk: str) -> None:
         nonlocal response, pass_shown
+        if not response and chunk:
+            spinner_stop.set()
         response += chunk
         if not pass_shown and any(keyword in response for keyword in expected_keywords):
             pass_shown = True
-            render("  [OK] pass")
+            render(f"  {_pass_color}{_check} PASS{_reset}")
             return
         if not pass_shown:
             render()
 
     try:
+        spinner_thread = threading.Thread(target=_spinner_loop, daemon=True)
+        spinner_thread.start()
         final_response = runner(
             system_prompt,
             user_message,
@@ -69,13 +113,17 @@ def _run_streaming_doctor_tc(
             cwd=project_root,
             model=model,
         )
+        spinner_stop.set()
+        spinner_thread.join(timeout=0.2)
         response = final_response
         passed = any(keyword in response for keyword in expected_keywords)
-        render("  [OK] pass" if passed else "  [FAIL]")
+        render(f"  {_pass_color}{_check} PASS{_reset}" if passed else f"  {_fail_color}{_cross} FAIL{_reset}")
         print("")
         return passed, None
     except Exception as e:
-        render("  [FAIL]")
+        spinner_stop.set()
+        spinner_thread.join(timeout=0.2)
+        render(f"  {_fail_color}{_cross} FAIL{_reset}")
         print("")
         return False, str(e)
 
@@ -470,17 +518,28 @@ def run_doctor_ai(args: list[str]) -> None:
         planner_complete = claude_complete_one_turn if selected_planner[0] == "claude" else codex_complete_one_turn
         implementer_complete = claude_complete_one_turn if selected_implementer[0] == "claude" else codex_complete_one_turn
 
-        print("\nRunning workflow tests (planner: " + selected_planner[0] + " / " + selected_planner[1] + ", implementer: " + selected_implementer[0] + " / " + selected_implementer[1] + ")...\n")
+        _cyan = "\033[36m"
+        _dim = "\033[2m"
+        _green = "\033[92m"
+        _red = "\033[31m"
+        _reset = "\033[0m"
+        _check = "\u2713"
+        _cross = "\u2717"
+        print("")
+        print(_cyan + "  \u2500\u2500\u2500 Workflow tests \u2500\u2500\u2500" + _reset)
+        print(_dim + "  planner: " + selected_planner[0] + " / " + selected_planner[1] + "  \u00b7  implementer: " + selected_implementer[0] + " / " + selected_implementer[1] + _reset)
+        print("")
 
         tc1_pass = False
         tc2_pass = False
         tc3_pass = False
+        tc4_pass = False
         if sys.stdout.isatty():
             tc1_pass, tc1_error = _run_streaming_doctor_tc(
                 "TC1 (plan request)",
                 system_prompt,
                 tc1_msg,
-                ["planforge plan", "run_plan.sh"],
+                ["planforge plan", "run_plan.sh", "run_plan.ps1"],
                 selected_planner[0],
                 selected_planner[1],
                 project_root,
@@ -492,7 +551,7 @@ def run_doctor_ai(args: list[str]) -> None:
                 "TC2 (implement request)",
                 system_prompt,
                 tc2_msg,
-                ["planforge implement", "run_implement.sh"],
+                ["planforge implement", "run_implement.sh", "run_implement.ps1"],
                 selected_implementer[0],
                 selected_implementer[1],
                 project_root,
@@ -504,47 +563,59 @@ def run_doctor_ai(args: list[str]) -> None:
                 "TC3 (/p with implementation-style request)",
                 system_prompt,
                 tc3_msg,
-                ["planforge plan", "run_plan.sh"],
+                ["planforge plan", "run_plan.sh", "run_plan.ps1"],
                 selected_planner[0],
                 selected_planner[1],
                 project_root,
             )
             if tc3_error:
                 print("TC3 (/p with implementation-style request) error:", tc3_error, file=sys.stderr)
-            _green = "\033[32m"
-            _red = "\033[31m"
-            _reset = "\033[0m"
-            print("  Test case results:")
-            print("  TC1 (plan request)     : " + (_green + "[OK] pass" + _reset if tc1_pass else _red + "[FAIL]" + _reset))
-            print("  TC2 (implement request): " + (_green + "[OK] pass" + _reset if tc2_pass else _red + "[FAIL]" + _reset))
-            print("  TC3 (/p with implementation-style request): " + (_green + "[OK] pass" + _reset if tc3_pass else _red + "[FAIL]" + _reset))
+
+            print(f"  {_cyan}TC4 (URL fetch){_reset}")
+            tc4_pass, tc4_error = _run_url_fetch_tc()
+            if tc4_error:
+                print("TC4 (URL fetch) error:", tc4_error, file=sys.stderr)
+            print("    " + (_green + _check + " PASS  " + _reset if tc4_pass else _red + _cross + " FAIL  " + _reset) + "GET " + URL_TEST_URL)
+
+            print(_cyan + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset)
+            print("  " + (_green + _check + " PASS" + _reset if tc1_pass else _red + _cross + " FAIL" + _reset) + "  TC1 (plan request)")
+            print("  " + (_green + _check + " PASS" + _reset if tc2_pass else _red + _cross + " FAIL" + _reset) + "  TC2 (implement request)")
+            print("  " + (_green + _check + " PASS" + _reset if tc3_pass else _red + _cross + " FAIL" + _reset) + "  TC3 (/p with implementation-style request)")
+            print("  " + (_green + _check + " PASS" + _reset if tc4_pass else _red + _cross + " FAIL" + _reset) + "  TC4 (URL fetch)")
             print("")
         else:
             try:
                 tc1_response = planner_complete(system_prompt, tc1_msg, cwd=project_root, model=selected_planner[1])
-                tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
+                tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response or "run_plan.ps1" in tc1_response
             except Exception as e:
                 print("TC1 (plan request) error:", e, file=sys.stderr)
             try:
                 tc2_response = implementer_complete(system_prompt, tc2_msg, cwd=project_root, model=selected_implementer[1])
-                tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
+                tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response or "run_implement.ps1" in tc2_response
             except Exception as e:
                 print("TC2 (implement request) error:", e, file=sys.stderr)
             try:
                 tc3_response = planner_complete(system_prompt, tc3_msg, cwd=project_root, model=selected_planner[1])
-                tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
+                tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response or "run_plan.ps1" in tc3_response
             except Exception as e:
                 print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
+            tc4_pass, tc4_err = _run_url_fetch_tc()
+            if tc4_err:
+                print("TC4 (URL fetch) error:", tc4_err, file=sys.stderr)
 
-            _green = "\033[32m"
-            _red = "\033[31m"
-            _reset = "\033[0m"
-            print("  Test case results:")
-            print("  TC1 (plan request)     : " + (_green + "[OK] pass" + _reset if tc1_pass else _red + "[FAIL]" + _reset))
-            print("  TC2 (implement request): " + (_green + "[OK] pass" + _reset if tc2_pass else _red + "[FAIL]" + _reset))
-            print("  TC3 (/p with implementation-style request): " + (_green + "[OK] pass" + _reset if tc3_pass else _red + "[FAIL]" + _reset))
+            _cyan2 = "\033[36m"
+            _green2 = "\033[92m"
+            _red2 = "\033[31m"
+            _reset2 = "\033[0m"
+            _check2 = "\u2713"
+            _cross2 = "\u2717"
+            print(_cyan2 + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset2)
+            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc1_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC1 (plan request)")
+            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc2_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC2 (implement request)")
+            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc3_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC3 (/p with implementation-style request)")
+            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc4_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC4 (URL fetch)")
             print("")
-        if not tc1_pass or not tc2_pass or not tc3_pass:
+        if not tc1_pass or not tc2_pass or not tc3_pass or not tc4_pass:
             exit_code = 1
         if not is_interactive:
             raise SystemExit(exit_code)
