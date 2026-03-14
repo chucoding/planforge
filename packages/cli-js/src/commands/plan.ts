@@ -4,7 +4,6 @@
 
 import fs from "fs-extra";
 import { relative, resolve } from "path";
-import { randomBytes } from "crypto";
 import { spawnSync } from "child_process";
 import { romanize } from "@daun_jung/korean-romanizer";
 import { getProjectRoot, getPlansDir, getDatedPlansDir, getDateParts } from "../utils/paths.js";
@@ -45,9 +44,6 @@ function slugifyForFilename(text: string): string {
   return isSlugValid(s) ? s : "";
 }
 
-function shortHash(): string {
-  return randomBytes(4).toString("hex");
-}
 
 /** Extract first # title or first non-empty line from plan markdown for use as slug source. */
 function extractTitleFromPlanBody(planBody: string): string {
@@ -167,12 +163,11 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       }
       slug = limitSlugHyphens(slug);
     }
-    const hash = shortHash();
     const now = new Date();
     const plansDir = getPlansDir(projectRoot);
     const datedPlansDir = getDatedPlansDir(projectRoot, now);
     await fs.ensureDir(datedPlansDir);
-    const filename = `${getDateParts(now).mmdd}-${slug}-${hash}.plan.md`;
+    const filename = `${getDateParts(now).hhmm}-${slug}.plan.md`;
     const filePath = resolve(datedPlansDir, filename);
     await fs.writeFile(filePath, bodyToWrite, "utf-8");
     await fs.writeJson(

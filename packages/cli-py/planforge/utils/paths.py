@@ -1,4 +1,4 @@
-"""Path resolution for PlanForge (project root, .planforge plans/contexts dirs)."""
+"""Path resolution for PlanForge (project root, .cursor/plans, .cursor/contexts)."""
 
 import os
 from datetime import datetime
@@ -9,7 +9,11 @@ def get_project_root(cwd: str | None = None) -> str:
     cwd = cwd or os.getcwd()
     dir_path = Path(cwd).resolve()
     while True:
-        if (dir_path / "planforge.json").exists() or (dir_path / ".planforge").exists():
+        if (
+            (dir_path / "planforge.json").exists()
+            or (dir_path / ".cursor" / "plans").exists()
+            or (dir_path / ".cursor" / "contexts").exists()
+        ):
             return str(dir_path)
         parent = dir_path.parent
         if parent == dir_path:
@@ -23,16 +27,11 @@ def get_cursor_dir(project_root: str) -> str:
 
 
 def get_plans_dir(project_root: str) -> str:
-    return str(Path(project_root) / ".planforge" / "plans")
+    return str(Path(project_root) / ".cursor" / "plans")
 
 
 def get_contexts_dir(project_root: str) -> str:
-    return str(Path(project_root) / ".planforge" / "contexts")
-
-
-def get_legacy_context_dir(project_root: str) -> str:
-    """Legacy path; used by doctor for migration warning only. TODO: 06-13에 제거."""
-    return str(Path(project_root) / ".planforge" / "context")
+    return str(Path(project_root) / ".cursor" / "contexts")
 
 
 def get_context_dir(project_root: str) -> str:
@@ -43,13 +42,14 @@ def get_default_context_dirs(project_root: str) -> list[str]:
     return [get_contexts_dir(project_root)]
 
 
-def get_date_parts(date: datetime | None = None) -> tuple[str, str]:
+def get_date_parts(date: datetime | None = None) -> tuple[str, str, str]:
+    """Return (yyyy_mm_dd, mmdd, hhmm)."""
     now = date or datetime.now()
-    return now.strftime("%Y-%m-%d"), now.strftime("%m%d")
+    return now.strftime("%Y-%m-%d"), now.strftime("%m%d"), now.strftime("%H%M")
 
 
 def get_dated_plans_dir(project_root: str, date: datetime | None = None) -> str:
-    yyyy_mm_dd, _ = get_date_parts(date)
+    yyyy_mm_dd, _, _ = get_date_parts(date)
     return str(Path(get_plans_dir(project_root)) / yyyy_mm_dd)
 
 

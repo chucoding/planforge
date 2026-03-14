@@ -29,8 +29,10 @@ Example:
 The plan is saved to:
 
 ```text
-.planforge/plans/YYYY-MM-DD/MMDD-<summary>-<hash>.plan.md
+.cursor/plans/YYYY-MM-DD/{HHMM}-<summary>.plan.md
 ```
+
+Plans live under `.cursor` so that opening a `*.plan.md` file in Cursor shows the **Build** button. If a plan file is occasionally unreadable in the IDE, reopen it or run `planforge implement` from the terminal.
 
 Then:
 
@@ -55,12 +57,12 @@ Both skills are script-first by design: they must execute the bundled `.cursor/s
 
 | Command | Description |
 | ------- | ----------- |
-| `planforge init` | Shows provider check (Claude/Codex) first; detects providers, optionally installs CLI; runs `claude /init` when Claude is available, creates `AGENTS.md` when Codex is available, and creates or suggests `planforge.json`, `.planforge/plans`, `.planforge/contexts`, skills, and rules. Use `--skip-provider-install` to skip provider prompt. |
-| `planforge plan "<goal>"` | Generate a plan and save to `.planforge/plans/YYYY-MM-DD/MMDD-<summary>-<hash>.plan.md` using the planner from `planforge.json`. Context is loaded from `--context-dir` (default: `.planforge/contexts`, fallback: `.planforge/context`) and merged from markdown files by recent mtime. Project instructions prefer `CLAUDE.md` for Claude and `AGENTS.md` for Codex, with fallback to the other file. |
-| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. Uses active plan from `.planforge/plans/index.json` (`activePlan`) or the latest dated `.plan.md` unless `--plan-file` is set. Context is loaded from `--context-dir` (default: `.planforge/contexts`, fallback: `.planforge/context`). Project instructions prefer `CLAUDE.md` for Claude and `AGENTS.md` for Codex, with fallback to the other file. |
+| `planforge init` | Shows provider check (Claude/Codex) first; detects providers, optionally installs CLI; runs `claude /init` when Claude is available, creates `AGENTS.md` when Codex is available, and creates or suggests `planforge.json`, `.cursor/plans`, `.cursor/contexts`, skills, and rules. Use `--skip-provider-install` to skip provider prompt. |
+| `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/YYYY-MM-DD/{HHMM}-<summary>.plan.md` using the planner from `planforge.json`. Context is loaded from `--context-dir` (default: `.cursor/contexts`) and merged from markdown files by recent mtime. Project instructions prefer `CLAUDE.md` for Claude and `AGENTS.md` for Codex, with fallback to the other file. |
+| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. Uses active plan from `.cursor/plans/index.json` (`activePlan`) or the latest dated `.plan.md` unless `--plan-file` is set. Context is loaded from `--context-dir` (default: `.cursor/contexts`). Project instructions prefer `CLAUDE.md` for Claude and `AGENTS.md` for Codex, with fallback to the other file. |
 | `planforge config show` | Print current `planforge.json`. |
 | `planforge config suggest [--apply]` | Show suggested config for installed providers; `--apply` writes it to `planforge.json`. |
-| `planforge doctor` | Check Claude/Codex CLI, provider instruction files (`CLAUDE.md`/`AGENTS.md`), `planforge.json`, `.planforge/plans`, and `.planforge/contexts`. |
+| `planforge doctor` | Check Claude/Codex CLI, provider instruction files (`CLAUDE.md`/`AGENTS.md`), `planforge.json`, `.cursor/plans`, and `.cursor/contexts`. |
 | `planforge doctor ai` | Run workflow compliance tests with AI: same interactive UI as `planforge model` (mode → provider → model, with cheapest model marked (recommended)). Uses models from `models.json` when available. Use `--provider` and `--model` to skip UI. |
 | `planforge install [-f]` | Install `.cursor/skills` and `.cursor/rules`; `-f` overwrites existing `planforge.json`. |
 
@@ -97,7 +99,7 @@ Flow:
 3. Sign-in handoff to installed CLI when needed.
 4. Optional install of the other provider.
 5. Create or update `planforge.json` (default config is generated from installed providers).
-6. Run `claude /init` when Claude is available, create `AGENTS.md` when Codex is available, then install Cursor skills/rules and create `.planforge/plans` and `.planforge/contexts`.
+6. Run `claude /init` when Claude is available, create `AGENTS.md` when Codex is available, then install Cursor skills/rules and create `.cursor/plans` and `.cursor/contexts`.
 
 Use `--skip-provider-install` to skip provider installation prompts and only set up config/directories.
 
@@ -124,17 +126,17 @@ repo/
   CLAUDE.md   # Claude project instructions
   AGENTS.md   # Codex project instructions
   planforge.json
-  .planforge/
-    contexts/
-      YYYY-MM-DD/
-        MMDD-*.md      # conversation context markdown, merged by recency
+  .cursor/
     plans/
       YYYY-MM-DD/
-        MMDD-*.plan.md
-  .cursor/
+        HHMM-*.plan.md   # plan files (HHMM = time 24h)
+      index.json        # activePlan
+    contexts/
+      YYYY-MM-DD/
+        HHMM-*.md       # conversation context markdown, merged by recency
     skills/
-      p/               # /p -> planforge plan
-      i/               # /i -> planforge implement
+      p/                # /p -> planforge plan
+      i/                # /i -> planforge implement
     rules/
 ```
 

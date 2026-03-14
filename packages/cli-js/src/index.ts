@@ -21,7 +21,7 @@ program
 
 program
   .command("init")
-  .description("Detect providers, run claude /init when available, install Cursor slash commands, create .planforge/plans, .planforge/contexts, and planforge.json")
+  .description("Detect providers, run claude /init when available, install Cursor slash commands, create .cursor/plans, .cursor/contexts, and planforge.json")
   .option("--skip-provider-install", "Skip interactive provider (Claude/Codex) install prompt")
   .action(async (opts: { skipProviderInstall?: boolean }) => {
     await runInit(opts.skipProviderInstall ? ["--skip-provider-install"] : []);
@@ -35,7 +35,7 @@ doctorCmd.action(async () => {
 });
 doctorCmd
   .command("static")
-  .description("Check environment and providers (Claude/Codex CLI, planforge.json, .planforge)")
+  .description("Check environment and providers (Claude/Codex CLI, planforge.json, .cursor/plans, .cursor/contexts)")
   .action(async () => {
     await runDoctor([]);
   });
@@ -68,9 +68,9 @@ program
 
 program
   .command("plan")
-  .description("Generate a development plan and save to .planforge/plans (uses planner from planforge.json)")
+  .description("Generate a development plan and save to .cursor/plans (uses planner from planforge.json)")
   .argument("[goal...]", "Planning goal (e.g. design auth refresh token)")
-  .option("--context-dir <path>", "Path to markdown context directory (default: .planforge/contexts)")
+  .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/contexts)")
   .option("--context <text>", "Conversation context text to pass to the planner")
   .action(async (goalParts: string[], opts: { contextDir?: string; context?: string }) => {
     await runPlan(goalParts, opts);
@@ -80,7 +80,7 @@ program
   .command("implement")
   .description("Run implementation (uses implementer from planforge.json)")
   .argument("[prompt...]", "Implementation prompt or task")
-  .option("--context-dir <path>", "Path to markdown context directory (default: .planforge/contexts)")
+  .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/contexts)")
   .option("--context <text>", "Conversation context text to pass to the implementer")
   .option("--plan-file <path>", "Path to plan file (default: index.json activePlan or latest dated .plan.md)")
   .option("--files <paths...>", "File paths to focus on (overrides plan's Files Likely to Change)")

@@ -8,7 +8,6 @@ from planforge.utils.paths import (
     get_project_root,
     get_plans_dir,
     get_context_dir,
-    get_legacy_context_dir,
     get_templates_root,
 )
 from planforge.utils.config import load_config, get_default_doctor_ai_config
@@ -176,7 +175,7 @@ def run_doctor(args: list[str]) -> None:
 
     has_plans_dir = Path(plans_dir).exists()
     checks.append((
-        ".planforge/plans",
+        ".cursor/plans",
         "ok" if has_plans_dir else "error",
         "exists" if has_plans_dir else "missing (run planforge init)",
     ))
@@ -184,21 +183,11 @@ def run_doctor(args: list[str]) -> None:
     context_dir_path = Path(get_context_dir(project_root))
     has_context_dir = context_dir_path.exists()
     checks.append((
-        ".planforge/contexts",
+        ".cursor/contexts",
         "ok" if has_context_dir else "warn",
         "exists" if has_context_dir else "missing (run planforge init)",
     ))
 
-    # TODO: 06-13에 제거 (레거시 경로/플랫 플랜 경고 블록)
-    legacy_context_dir = Path(get_legacy_context_dir(project_root))
-    if legacy_context_dir.exists():
-        checks.append((
-            ".planforge/context",
-            "warn",
-            "legacy path detected (migrate to .planforge/contexts)",
-        ))
-
-    # TODO: 06-13에 제거 (위 레거시 블록과 함께)
     if has_plans_dir:
         plan_root = Path(plans_dir)
         root_entries = list(plan_root.iterdir())
@@ -207,7 +196,7 @@ def run_doctor(args: list[str]) -> None:
             checks.append((
                 "plans layout",
                 "warn",
-                "legacy flat plan files detected (use YYYY-MM-DD/MMDD-... .plan.md)",
+                "flat plan files in plans root (use YYYY-MM-DD/HHMM-slug.plan.md)",
             ))
 
         invalid_plan_dirs = [entry.name for entry in root_entries if entry.is_dir() and not _is_date_dir_name(entry.name)]
