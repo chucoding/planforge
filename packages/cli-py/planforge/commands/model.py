@@ -6,7 +6,7 @@ from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_models_json_path
 from planforge.utils.config import get_default_config
-from planforge.utils.tui import wait_key, print_current_ai_config
+from planforge.utils.tui import print_current_ai_config, select_from_list
 from planforge.providers.claude import check_claude
 from planforge.providers.codex import check_codex
 
@@ -31,59 +31,26 @@ def _run_model_tui(
     mode_providers = catalog.get("modeProviders", {})
     providers_data = catalog.get("providers", {})
 
-    # Step 1: mode (with Quit option)
-    mode_options = list(modes) + ["Quit"]
-    mode_index = 0
-    print("\n  Mode: [Up/Down]  Enter to confirm\n")
-    while True:
-        for i, m in enumerate(mode_options):
-            prefix = "  > " if i == mode_index else "    "
-            print(f"{prefix} {m}")
-        key = wait_key()
-        if key == "quit":
-            return None
-        if key == "enter":
-            if mode_index == len(mode_options) - 1:
-                return None  # Quit
-            break
-        if key == "up":
-            mode_index = (mode_index - 1) % len(mode_options)
-        elif key == "down":
-            mode_index = (mode_index + 1) % len(mode_options)
-        if key in ("up", "down"):
-            sys.stdout.write(f"\033[{len(mode_options)}A\033[0J")
-            sys.stdout.flush()
-    mode = modes[mode_index]
+    mode = select_from_list([(m, m) for m in modes], "Mode: [Up/Down]  Enter to confirm")
+    if mode is None:
+        return None
+
     provider_ids = mode_providers.get(mode, list(providers_data.keys()))
     available = [p for p in provider_ids if (p == "claude" and has_claude) or (p == "codex" and has_codex)]
     if not available:
         print("No provider available for this mode. Install Claude or Codex CLI.", file=sys.stderr)
         return None
 
-    # Step 2: provider (skip if single)
     if len(available) == 1:
         provider_id = available[0]
     else:
-        prov_index = 0
-        print("\n  Provider: [Up/Down]  Enter to confirm\n")
-        while True:
-            for i, p in enumerate(available):
-                name = providers_data.get(p, {}).get("name", p)
-                prefix = "  > " if i == prov_index else "    "
-                print(f"{prefix} {name} ({p})")
-            key = wait_key()
-            if key == "quit":
-                return None
-            if key == "enter":
-                break
-            if key == "up":
-                prov_index = (prov_index - 1) % len(available)
-            elif key == "down":
-                prov_index = (prov_index + 1) % len(available)
-            if key in ("up", "down"):
-                sys.stdout.write(f"\033[{len(available)}A\033[0J")
-                sys.stdout.flush()
-        provider_id = available[prov_index]
+        provider_items = [
+            (f"{providers_data.get(p, {}).get('name', p)} ({p})", p)
+            for p in available
+        ]
+        provider_id = select_from_list(provider_items, "Provider: [Up/Down]  Enter to confirm")
+        if provider_id is None:
+            return None
 
     prov = providers_data.get(provider_id, {})
     models = prov.get("models", [])
@@ -94,67 +61,45 @@ def _run_model_tui(
         print("No models defined for this provider.", file=sys.stderr)
         return None
 
-    # Step 3a: model selection (Up/Down, Enter to confirm). Recommended = default config for this mode (config/default-*.json).
     default_model_id = None
     if default_config and mode in default_config:
         role = default_config[mode]
         if isinstance(role, dict) and role.get("provider") == provider_id:
             default_model_id = role.get("model")
-    model_index = 0
-    print("\n  [Up/Down] model  Enter to confirm\n")
-    while True:
-        for i, m in enumerate(models):
-            prefix = "  > " if i == model_index else "    "
-            mid = m.get("id", "")
-            rec = "  (recommended)" if default_model_id and mid == default_model_id else ""
-            print(f"{prefix}{m['label']} ({mid}){rec}")
-        key = wait_key()
-        if key == "quit":
-            return None
-        if key == "enter":
-            break
-        if key == "up":
-            model_index = (model_index - 1) % len(models)
-        elif key == "down":
-            model_index = (model_index + 1) % len(models)
-        if key in ("up", "down"):
-            sys.stdout.write(f"\033[{len(models)}A\033[0J")
-            sys.stdout.flush()
 
-    # Step 3b: Effort (Claude, only if model supports it) or Reasoning (Codex) selection
-    selected_model = models[model_index]
+    model_items = []
+    for m in models:
+        mid = m.get("id", "")
+        rec = "  (recommended)" if default_model_id and mid == default_model_id else ""
+        label = m.get("label", mid)
+        model_items.append((f"{label} ({mid}){rec}", mid))
+    model_id = select_from_list(model_items, "[Up/Down] model  Enter to confirm")
+    if model_id is None:
+        return None
+
+    selected_model = next((m for m in models if m.get("id") == model_id), {})
     claude_supports_effort = is_claude and selected_model.get("effort", True) is not False
     opts = (effort_opts if claude_supports_effort else []) if is_claude else reasoning_opts
-    label = "Effort" if is_claude else "Reasoning"
-    opt_index = min(1, len(opts) - 1) if opts else 0
-    if opts:
-        print(f"\n  [Up/Down] {label}  Enter to confirm\n")
-        while True:
-            for i, val in enumerate(opts):
-                prefix = "  > " if i == opt_index else "    "
-                print(prefix + val)
-            key = wait_key()
-            if key == "quit":
-                return None
-            if key == "enter":
-                break
-            if key == "up":
-                opt_index = (opt_index - 1) % len(opts)
-            elif key == "down":
-                opt_index = (opt_index + 1) % len(opts)
-            if key in ("up", "down"):
-                sys.stdout.write(f"\033[{len(opts)}A\033[0J")
-                sys.stdout.flush()
+    opt_label = "Effort" if is_claude else "Reasoning"
 
-    model_id = models[model_index]["id"]
+    selected_opt = None
+    if opts:
+        selected_opt = select_from_list(
+            [(o, o) for o in opts],
+            f"[Up/Down] {opt_label}  Enter to confirm",
+            initial_index=min(1, len(opts) - 1),
+        )
+        if selected_opt is None:
+            return None
+
     result = {
         "provider": provider_id,
         "model": model_id,
     }
-    if is_claude and claude_supports_effort:
-        result["effort"] = effort_opts[opt_index]
-    elif not is_claude:
-        result["reasoning"] = reasoning_opts[opt_index]
+    if is_claude and claude_supports_effort and selected_opt is not None:
+        result["effort"] = selected_opt
+    elif not is_claude and selected_opt is not None:
+        result["reasoning"] = selected_opt
     return (mode, result)
 
 

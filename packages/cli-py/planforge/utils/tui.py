@@ -1,5 +1,7 @@
 """Shared TUI key handling for arrow-key selection (doctor, model commands)."""
 
+import sys
+
 import readchar
 
 
@@ -32,6 +34,40 @@ def wait_key() -> str | None:
     except KeyboardInterrupt:
         return "quit"
     return _normalize_key(key)
+
+
+def select_from_list(
+    items: list[tuple[str, object]],
+    prompt: str,
+    *,
+    quit_label: str = "Quit",
+    initial_index: int = 0,
+) -> object | None:
+    """Show list with arrow keys; Enter selects, Quit row or key returns None. items = [(label, value), ...]."""
+    if not items:
+        return None
+    total_rows = len(items) + 1
+    index = max(0, min(initial_index, len(items) - 1))
+    print(f"\n  {prompt}\n")
+    while True:
+        for i, (label, _) in enumerate(items):
+            prefix = "  > " if i == index else "    "
+            print(f"{prefix}{label}")
+        prefix = "  > " if index == len(items) else "    "
+        print(f"{prefix}{quit_label}")
+        key = wait_key()
+        if key == "quit":
+            return None
+        if key == "enter":
+            if index == len(items):
+                return None
+            return items[index][1]
+        if key == "up":
+            index = (index - 1) % total_rows
+        elif key == "down":
+            index = (index + 1) % total_rows
+        sys.stdout.write(f"\033[{total_rows}A\033[0J")
+        sys.stdout.flush()
 
 
 def _format_role_line(role: str, role_config: dict) -> str:

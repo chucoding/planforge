@@ -22,7 +22,7 @@ from planforge.providers.codex import (
     complete_one_turn as codex_complete_one_turn,
     stream_one_turn as codex_stream_one_turn,
 )
-from planforge.utils.tui import wait_key, print_current_ai_config
+from planforge.utils.tui import print_current_ai_config, select_from_list
 from planforge.commands.model import _load_models_catalog
 
 DOCTOR_MODE_STATIC = "static"
@@ -93,39 +93,19 @@ def run_doctor_mode_select() -> None:
         print_current_ai_config(doctor_ai_config, "Doctor AI config (default)")
     except (FileNotFoundError, RuntimeError):
         pass
-    modes = [
-        ("static", "Check environment and providers"),
-        ("ai", "Run workflow tests with AI"),
+    mode_items = [
+        ("static – Check environment and providers", DOCTOR_MODE_STATIC),
+        ("ai – Run workflow tests with AI", DOCTOR_MODE_AI),
     ]
-    total_rows = len(modes) + 1
-    index = 0
-    print("\n  Mode  [Up/Down]  Enter to confirm\n")
-    while True:
-        for i, (label, desc) in enumerate(modes):
-            prefix = "  > " if i == index else "    "
-            print(f"{prefix}{label}  –  {desc}")
-        prefix = "  > " if index == len(modes) else "    "
-        print(f"{prefix}Quit")
-        key = wait_key()
-        if key == "quit":
-            sys.exit(0)
-        if key == "enter":
-            if index == len(modes):
-                sys.exit(0)
-            chosen = modes[index][0]
-            if chosen == DOCTOR_MODE_STATIC:
-                run_doctor([])
-                return
-            if chosen == DOCTOR_MODE_AI:
-                run_doctor_ai([])
-                return
-            return
-        if key == "up":
-            index = (index - 1) % total_rows
-        elif key == "down":
-            index = (index + 1) % total_rows
-        sys.stdout.write("\033[%dA\033[0J" % total_rows)
-        sys.stdout.flush()
+    chosen = select_from_list(mode_items, "Mode  [Up/Down]  Enter to confirm")
+    if chosen is None:
+        sys.exit(0)
+    if chosen == DOCTOR_MODE_STATIC:
+        run_doctor([])
+        return
+    if chosen == DOCTOR_MODE_AI:
+        run_doctor_ai([])
+        return
 
 
 def _status_symbol(status: str) -> str:
@@ -328,7 +308,6 @@ def _select_provider_and_model(
     has_claude: bool,
     has_codex: bool,
     role_label: str,
-    exit_code: int,
 ) -> tuple[str, str] | None:
     """Interactive: select provider then model (last model = recommended). Returns (provider, model) or None if Quit."""
     providers_data = catalog.get("providers", {})
@@ -340,60 +319,36 @@ def _select_provider_and_model(
         return None
 
     while True:
-        prov_names = [providers_data.get(p, {}).get("name", p) if isinstance(providers_data.get(p), dict) else p for p in provider_ids]
-        total_prov = len(prov_names) + 1
-        pi = 0
-        print(f"\n  Select {role_label}  [Up/Down]  Enter to confirm\n")
-        while True:
-            for i, name in enumerate(prov_names):
-                prefix = "  > " if i == pi else "    "
-                print(f"{prefix}{name} ({provider_ids[i]})")
-            prefix = "  > " if pi == len(prov_names) else "    "
-            print(f"{prefix}Quit")
-            key = wait_key()
-            if key == "quit":
-                raise SystemExit(exit_code)
-            if key == "enter":
-                if pi == len(prov_names):
-                    return None
-                break
-            if key == "up":
-                pi = (pi - 1) % total_prov
-            elif key == "down":
-                pi = (pi + 1) % total_prov
-            sys.stdout.write("\033[%dA\033[0J" % total_prov)
-            sys.stdout.flush()
-        provider_id = provider_ids[pi]
+        provider_items = [
+            (
+                f"{providers_data.get(p, {}).get('name', p) if isinstance(providers_data.get(p), dict) else p} ({p})",
+                p,
+            )
+            for p in provider_ids
+        ]
+        provider_id = select_from_list(
+            provider_items,
+            f"Select {role_label}  [Up/Down]  Enter to confirm",
+        )
+        if provider_id is None:
+            return None
         prov = providers_data.get(provider_id) or {}
         models = prov.get("models", []) if isinstance(prov, dict) else []
         if not models:
             continue
-        total_mod = len(models) + 1
-        mi = 0
-        print("\n  [Up/Down] model  Enter to confirm  (last = recommended)\n")
-        while True:
-            for i, m in enumerate(models):
-                rec = "  (recommended)" if i == len(models) - 1 else ""
-                prefix = "  > " if i == mi else "    "
-                mid = m.get("id", "") if isinstance(m, dict) else ""
-                label = m.get("label", mid) if isinstance(m, dict) else mid
-                print(f"{prefix}{label} ({mid}){rec}")
-            prefix = "  > " if mi == len(models) else "    "
-            print(f"{prefix}Quit")
-            key = wait_key()
-            if key == "quit":
-                raise SystemExit(exit_code)
-            if key == "enter":
-                if mi == len(models):
-                    break
-                model_id = models[mi].get("id", "") if isinstance(models[mi], dict) else ""
-                return (provider_id, model_id)
-            if key == "up":
-                mi = (mi - 1) % total_mod
-            elif key == "down":
-                mi = (mi + 1) % total_mod
-            sys.stdout.write("\033[%dA\033[0J" % total_mod)
-            sys.stdout.flush()
+        model_items = []
+        for i, m in enumerate(models):
+            mid = m.get("id", "") if isinstance(m, dict) else ""
+            label = m.get("label", mid) if isinstance(m, dict) else mid
+            rec = "  (recommended)" if i == len(models) - 1 else ""
+            model_items.append((f"{label} ({mid}){rec}", mid))
+        model_id = select_from_list(
+            model_items,
+            "[Up/Down] model  Enter to confirm  (last = recommended)",
+        )
+        if model_id is None:
+            continue
+        return (provider_id, model_id)
 
 
 def run_doctor_ai(args: list[str]) -> None:
@@ -482,36 +437,18 @@ def run_doctor_ai(args: list[str]) -> None:
             print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}")
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
 
-            modes = ["planner", "implementer"]
-            total_mode = len(modes) + 1
-            mode_index = 0
-            print("\n  Mode  [Up/Down]  Enter to confirm\n")
-            while True:
-                for i, m in enumerate(modes):
-                    prefix = "  > " if i == mode_index else "    "
-                    print(f"{prefix}{m}")
-                prefix = "  > " if mode_index == len(modes) else "    "
-                print(f"{prefix}Quit")
-                key = wait_key()
-                if key == "quit":
-                    raise SystemExit(exit_code)
-                if key == "enter":
-                    if mode_index == len(modes):
-                        raise SystemExit(exit_code)
-                    break
-                if key == "up":
-                    mode_index = (mode_index - 1) % total_mode
-                elif key == "down":
-                    mode_index = (mode_index + 1) % total_mode
-                sys.stdout.write("\033[%dA\033[0J" % total_mode)
-                sys.stdout.flush()
-            first_role = modes[mode_index]
+            first_role = select_from_list(
+                [("planner", "planner"), ("implementer", "implementer")],
+                "Mode  [Up/Down]  Enter to confirm",
+            )
+            if first_role is None:
+                raise SystemExit(exit_code)
             second_role = "implementer" if first_role == "planner" else "planner"
 
-            first_sel = _select_provider_and_model(catalog, has_claude, has_codex, first_role, exit_code)
+            first_sel = _select_provider_and_model(catalog, has_claude, has_codex, first_role)
             if first_sel is None:
                 raise SystemExit(exit_code)
-            second_sel = _select_provider_and_model(catalog, has_claude, has_codex, second_role, exit_code)
+            second_sel = _select_provider_and_model(catalog, has_claude, has_codex, second_role)
             if second_sel is None:
                 raise SystemExit(exit_code)
             if first_role == "planner":
@@ -530,30 +467,14 @@ def run_doctor_ai(args: list[str]) -> None:
             print("  ----------------")
             print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}")
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
-            print("")
-            print("  Select AI for workflow test  [Up/Down]  Enter to confirm\n")
-            total_rows = len(options) + 1
-            index = 0
-            while True:
-                for i, (prov, model, _rec) in enumerate(options):
-                    prefix = "  > " if i == index else "    "
-                    print(f"{prefix}{prov} ({model})")
-                prefix = "  > " if index == len(options) else "    "
-                print(f"{prefix}Quit")
-                key = wait_key()
-                if key == "quit":
-                    raise SystemExit(exit_code)
-                if key == "enter":
-                    if index == len(options):
-                        raise SystemExit(exit_code)
-                    break
-                if key == "up":
-                    index = (index - 1) % total_rows
-                elif key == "down":
-                    index = (index + 1) % total_rows
-                sys.stdout.write("\033[%dA\033[0J" % total_rows)
-                sys.stdout.flush()
-            selected_planner = selected_implementer = (options[index][0], options[index][1])
+            flat_items = [(f"{prov} ({model})", (prov, model)) for (prov, model, _) in options]
+            selected = select_from_list(
+                flat_items,
+                "Select AI for workflow test  [Up/Down]  Enter to confirm",
+            )
+            if selected is None:
+                raise SystemExit(exit_code)
+            selected_planner = selected_implementer = selected
         else:
             selected_planner = selected_implementer = (options[0][0], options[0][1])
 
