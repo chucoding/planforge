@@ -11,8 +11,24 @@ You must execute the PlanForge command path for every `/p` request. Do not draft
 
 **When the user invokes /p with a goal (e.g. "/p design a tetris game"):**
 
-1. **Summarize the conversation** - Summarize the current chat (goals, decisions, constraints, relevant files or tech) in a short paragraph and write/update a markdown file in the project's **context directory** (`.cursor/contexts`). Write the context summary **in the same language as the user's goal and the conversation**. Use a dated subdirectory and `HHMM-...` filename so plan/implement will read it. Use an **English-only** filename (e.g. `1430-plan.md`, `1430-add-login.plan.md`). After the time prefix, use at most 2 hyphens in the filename (e.g. `1820-make-login-page.plan.md`). Keep it short and overwrite or append as needed.
-2. **Run the plan script (required)** - Run **one** command only: no `cd`, no `&&` (PowerShell does not support `&&`). Terminal is already in workspace root. Use `.cursor/skills/p/scripts/run_plan.ps1 "<goal>"` on Windows or `.cursor/skills/p/scripts/run_plan.sh` on mac/Linux, or `planforge plan "<goal>"`. Never create `.plan.md` content directly in chat. The command generates `.cursor/plans/YYYY-MM-DD/{HHMM}-<summary>.plan.md` using `planforge.json`.
+0. **URL 선행 로딩 (if goal contains URLs)** - If the goal contains any URLs (match `https?://[^\s]+`, including notion.so / notion.site):
+   - For each URL: use MCP tool **notion-fetch** (server `user-Notion`) with `{ "id": "<url>" }` for Notion URLs; use **mcp_web_fetch** for other web URLs. Skip failed URLs; combine successful results into one markdown (e.g. `## <URL>\n\n<content>` per URL). Keep this content for step 1.
+
+1. **Context file (one file: chat history + optional URL content)** - Derive a **slug** from the goal using the same rules as the plan command: lowercase ASCII letters, digits, hyphens only; at most 2 hyphens; English-only (e.g. `add-login`, `make-tetris`). Write **one** markdown file to the project's **context directory** (`.cursor/contexts`) under a dated subdirectory `YYYY-MM-DD` with filename `HHMM-<slug>.md` (use current time for HHMM). Do **not** over-summarize the conversation; use this format only:
+   ```
+   # Cursor Chat History
+   User : {Question1}
+   Agent : {Answer1}
+   User : {Question2}
+   Agent : {Answer2}
+   ...
+
+   위 대화를 참고하여 사용자의 의도를 파악하고 플랜을 세우는데 참고한다.
+   ```
+   If you fetched URL content in step 0, append it as a separate section (e.g. `## Fetched URLs` or per-URL headings) in the **same** file. Create the dated subdirectory if it does not exist.
+
+2. **Run the plan script (required)** - Run **one** command only: no `cd`, no `&&` (PowerShell does not support `&&`). Terminal is already in workspace root. Use `.cursor/skills/p/scripts/run_plan.ps1 "<goal>"` on Windows or `.cursor/skills/p/scripts/run_plan.sh` on mac/Linux, or `planforge plan "<goal>"`. Pass the **same slug** so the plan output filename matches the context file: invoke as `planforge plan "<goal>" --slug <slug>` (or ensure the script forwards `--slug <slug>`). The command generates `.cursor/plans/YYYY-MM-DD/{HHMM}-<slug>.plan.md` so that context file `HHMM-<slug>.md` and plan file `HHMM-<slug>.plan.md` use the same slug. Never create `.plan.md` content directly in chat.
+
 3. **After it completes** - Read the generated `.plan.md` file and summarize/reference it in your reply. Do not start implementation. If execution fails, report the error output and suggest concrete fixes (for example `planforge init` or installing the configured provider CLI).
 
 If script execution is blocked or fails, stop and return an error-focused response. Do not provide a substitute hand-written plan.

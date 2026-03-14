@@ -72,7 +72,8 @@ program
   .argument("[goal...]", "Planning goal (e.g. design auth refresh token)")
   .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/contexts)")
   .option("--context <text>", "Conversation context text to pass to the planner")
-  .action(async (goalParts: string[], opts: { contextDir?: string; context?: string }) => {
+  .option("--slug <slug>", "Override output filename slug (default: from plan body or goal)")
+  .action(async (goalParts: string[], opts: { contextDir?: string; context?: string; slug?: string }) => {
     await runPlan(goalParts, opts);
   });
 

@@ -8,6 +8,7 @@ from pathlib import Path
 from planforge.utils.paths import get_project_root, get_plans_dir, get_dated_plans_dir, get_date_parts
 from planforge.utils.config import load_config
 from planforge.utils.context import load_merged_context
+from planforge.utils.url_fetch import fetch_urls_context
 from planforge.utils.repo_context import get_repo_context
 from planforge.utils.project_context import get_project_context
 from planforge.providers.codex import check_codex, run_plan as codex_run_plan
@@ -105,6 +106,9 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
     except OSError as e:
         print("Failed to load context:", e, file=__import__("sys").stderr)
         raise SystemExit(1)
+    url_context = fetch_urls_context(goal)
+    if url_context:
+        context = url_context + "\n\n" + (context or "")
     provider = config["planner"]["provider"]
     check, run = _get_planner_runner(provider)
     if not check or not run:
@@ -128,16 +132,21 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
         print("Plan generation failed:", e, file=__import__("sys").stderr)
         raise SystemExit(1)
     body_to_write = _strip_filename_slug_line(plan_body)
-    slug = _parse_slug_from_plan_body(plan_body)
-    if not slug:
-        slug = _slugify_ascii(goal)
-        if not _is_slug_valid(slug):
-            title = _extract_title_from_plan_body(plan_body)
-            if title:
-                slug = _slugify_ascii(title)
-        if not _is_slug_valid(slug):
-            slug = "plan"
-        slug = _limit_slug_hyphens(slug)
+    if opts.get("slug", "").strip():
+        raw = re.sub(r"[^a-z0-9-]", "", opts["slug"].strip().lower())
+        raw = re.sub(r"-+", "-", raw).strip("-")
+        slug = _limit_slug_hyphens(raw) if _is_slug_valid(raw) else "plan"
+    else:
+        slug = _parse_slug_from_plan_body(plan_body)
+        if not slug:
+            slug = _slugify_ascii(goal)
+            if not _is_slug_valid(slug):
+                title = _extract_title_from_plan_body(plan_body)
+                if title:
+                    slug = _slugify_ascii(title)
+            if not _is_slug_valid(slug):
+                slug = "plan"
+            slug = _limit_slug_hyphens(slug)
     now = datetime.now()
     plans_dir = Path(get_plans_dir(project_root))
     dated_plans_dir = Path(get_dated_plans_dir(project_root, now))

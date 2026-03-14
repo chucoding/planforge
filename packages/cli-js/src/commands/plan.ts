@@ -10,6 +10,7 @@ import { getProjectRoot, getPlansDir, getDatedPlansDir, getDateParts } from "../
 import { getRepoContext } from "../utils/repo-context.js";
 import { getProjectContext } from "../utils/project-context.js";
 import { loadMergedContext } from "../utils/context.js";
+import { fetchUrlsContext } from "../utils/url-fetch.js";
 import { loadConfig } from "../config/load.js";
 import { getPlannerRunner } from "../providers/registry.js";
 
@@ -86,12 +87,14 @@ function limitSlugHyphens(slug: string): string {
 export interface PlanCliOpts {
   contextDir?: string;
   context?: string;
+  /** When set, use this slug for the plan output filename (HHMM-<slug>.plan.md). Validated and hyphen-limited. */
+  slug?: string;
 }
 
 export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void> {
   const goal = args.join(" ").trim();
   if (!goal) {
-    console.error("Usage: planforge plan <goal>");
+    console.error("Usage: planforge plan <goal> [--slug <slug>]");
     process.exit(1);
   }
 
@@ -108,6 +111,8 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
     console.error("Failed to load context:", (err as Error).message);
     process.exit(1);
   }
+  const urlContext = await fetchUrlsContext(goal);
+  if (urlContext) context = urlContext + "\n\n" + (context ?? "");
   const runner = getPlannerRunner(config.planner.provider);
 
   if (!runner) {
@@ -135,33 +140,39 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       projectContextSource,
     });
     const bodyToWrite = stripFilenameSlugLine(planBody);
-    let slug = parseSlugFromPlanBody(planBody);
-    if (!slug) {
-      slug = slugifyAscii(goal);
-      if (!isSlugValid(slug)) {
-        try {
-          slug = slugifyAscii(romanize(goal));
-        } catch {
-          /* ignore romanization errors */
+    let slug: string;
+    if (opts?.slug?.trim()) {
+      const raw = opts.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      slug = isSlugValid(raw) ? limitSlugHyphens(raw) : "plan";
+    } else {
+      slug = parseSlugFromPlanBody(planBody) ?? "";
+      if (!slug) {
+        slug = slugifyAscii(goal);
+        if (!isSlugValid(slug)) {
+          try {
+            slug = slugifyAscii(romanize(goal));
+          } catch {
+            /* ignore romanization errors */
+          }
         }
-      }
-      if (!isSlugValid(slug)) {
-        const title = extractTitleFromPlanBody(planBody);
-        if (title) {
-          slug = slugifyAscii(title);
-          if (!isSlugValid(slug)) {
-            try {
-              slug = slugifyAscii(romanize(title));
-            } catch {
-              /* ignore */
+        if (!isSlugValid(slug)) {
+          const title = extractTitleFromPlanBody(planBody);
+          if (title) {
+            slug = slugifyAscii(title);
+            if (!isSlugValid(slug)) {
+              try {
+                slug = slugifyAscii(romanize(title));
+              } catch {
+                /* ignore */
+              }
             }
           }
         }
+        if (!isSlugValid(slug)) {
+          slug = "plan";
+        }
+        slug = limitSlugHyphens(slug);
       }
-      if (!isSlugValid(slug)) {
-        slug = "plan";
-      }
-      slug = limitSlugHyphens(slug);
     }
     const now = new Date();
     const plansDir = getPlansDir(projectRoot);

@@ -68,9 +68,13 @@ def model_cmd() -> None:
 @click.argument("goal", nargs=-1)
 @click.option("--context-dir", "context_dir", type=click.Path(), help="Path to markdown context directory (default: .cursor/contexts)")
 @click.option("--context", help="Conversation context text to pass to the planner")
-def plan_cmd(goal: tuple[str, ...], context_dir: str | None, context: str | None) -> None:
+@click.option("--slug", help="Override output filename slug (default: from plan body or goal)")
+def plan_cmd(goal: tuple[str, ...], context_dir: str | None, context: str | None, slug: str | None) -> None:
     """Generate a development plan and save to .cursor/plans (uses planner from planforge.json)."""
-    run_plan(list(goal), {"context_dir": context_dir, "context": context})
+    opts = {"context_dir": context_dir, "context": context}
+    if slug is not None:
+        opts["slug"] = slug
+    run_plan(list(goal), opts)
 
 
 @main.command("implement")
