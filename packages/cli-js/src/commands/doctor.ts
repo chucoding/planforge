@@ -561,7 +561,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       "TC1 (plan request)",
       systemPrompt,
       promptsData.tc1PlanRequest,
-      ["planforge plan", "run_plan.sh"],
+      ["planforge plan", "run_plan.sh", "run_plan.ps1"],
       selectedPlanner.provider,
       selectedPlanner.model,
       projectRoot
@@ -575,7 +575,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       "TC2 (implement request)",
       systemPrompt,
       promptsData.tc2ImplementRequest,
-      ["planforge implement", "run_implement.sh"],
+      ["planforge implement", "run_implement.sh", "run_implement.ps1"],
       selectedImplementer.provider,
       selectedImplementer.model,
       projectRoot
@@ -589,7 +589,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       "TC3 (/p with implementation-style request)",
       systemPrompt,
       promptsData.tc3SlashPWithImplementationStyleContent,
-      ["planforge plan", "run_plan.sh"],
+      ["planforge plan", "run_plan.sh", "run_plan.ps1"],
       selectedPlanner.provider,
       selectedPlanner.model,
       projectRoot
@@ -615,7 +615,8 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       );
       tc1Pass =
         tc1Response.includes("planforge plan") ||
-        tc1Response.includes("run_plan.sh");
+        tc1Response.includes("run_plan.sh") ||
+        tc1Response.includes("run_plan.ps1");
     } catch (e) {
       console.error("TC1 (plan request) error:", (e as Error).message);
     }
@@ -627,7 +628,8 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       );
       tc2Pass =
         tc2Response.includes("planforge implement") ||
-        tc2Response.includes("run_implement.sh");
+        tc2Response.includes("run_implement.sh") ||
+        tc2Response.includes("run_implement.ps1");
     } catch (e) {
       console.error("TC2 (implement request) error:", (e as Error).message);
     }
@@ -639,7 +641,8 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       );
       tc3Pass =
         tc3Response.includes("planforge plan") ||
-        tc3Response.includes("run_plan.sh");
+        tc3Response.includes("run_plan.sh") ||
+        tc3Response.includes("run_plan.ps1");
     } catch (e) {
       console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
     }

@@ -480,7 +480,7 @@ def run_doctor_ai(args: list[str]) -> None:
                 "TC1 (plan request)",
                 system_prompt,
                 tc1_msg,
-                ["planforge plan", "run_plan.sh"],
+                ["planforge plan", "run_plan.sh", "run_plan.ps1"],
                 selected_planner[0],
                 selected_planner[1],
                 project_root,
@@ -492,7 +492,7 @@ def run_doctor_ai(args: list[str]) -> None:
                 "TC2 (implement request)",
                 system_prompt,
                 tc2_msg,
-                ["planforge implement", "run_implement.sh"],
+                ["planforge implement", "run_implement.sh", "run_implement.ps1"],
                 selected_implementer[0],
                 selected_implementer[1],
                 project_root,
@@ -504,7 +504,7 @@ def run_doctor_ai(args: list[str]) -> None:
                 "TC3 (/p with implementation-style request)",
                 system_prompt,
                 tc3_msg,
-                ["planforge plan", "run_plan.sh"],
+                ["planforge plan", "run_plan.sh", "run_plan.ps1"],
                 selected_planner[0],
                 selected_planner[1],
                 project_root,
@@ -522,17 +522,17 @@ def run_doctor_ai(args: list[str]) -> None:
         else:
             try:
                 tc1_response = planner_complete(system_prompt, tc1_msg, cwd=project_root, model=selected_planner[1])
-                tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
+                tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response or "run_plan.ps1" in tc1_response
             except Exception as e:
                 print("TC1 (plan request) error:", e, file=sys.stderr)
             try:
                 tc2_response = implementer_complete(system_prompt, tc2_msg, cwd=project_root, model=selected_implementer[1])
-                tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
+                tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response or "run_implement.ps1" in tc2_response
             except Exception as e:
                 print("TC2 (implement request) error:", e, file=sys.stderr)
             try:
                 tc3_response = planner_complete(system_prompt, tc3_msg, cwd=project_root, model=selected_planner[1])
-                tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
+                tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response or "run_plan.ps1" in tc3_response
             except Exception as e:
                 print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
 
