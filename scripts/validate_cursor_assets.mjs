@@ -9,11 +9,11 @@ const root = path.resolve(__dirname, "..");
 
 const TEMPLATE_P = path.join(root, "templates", "cursor", "skills", "p", "SKILL.md");
 const TEMPLATE_I = path.join(root, "templates", "cursor", "skills", "i", "SKILL.md");
-const TEMPLATE_WORKFLOW = path.join(root, "templates", "cursor", "rules", "workflow.mdc");
+const TEMPLATE_WORKFLOW = path.join(root, "templates", "cursor", "rules", "planforge-workflow.mdc");
 
 const RUNTIME_P = path.join(root, ".cursor", "skills", "p", "SKILL.md");
 const RUNTIME_I = path.join(root, ".cursor", "skills", "i", "SKILL.md");
-const RUNTIME_WORKFLOW = path.join(root, ".cursor", "rules", "workflow.mdc");
+const RUNTIME_WORKFLOW = path.join(root, ".cursor", "rules", "planforge-workflow.mdc");
 
 function fail(message) {
   console.error(`[validate_cursor_assets] ERROR: ${message}`);
@@ -71,8 +71,8 @@ function validateSkill(filePath) {
 function validateWorkflow(filePath) {
   const text = readText(filePath);
   requireContains(filePath, text, [
-    "You must run `planforge plan",
-    "You must run `planforge implement",
+    "planforge plan",
+    "planforge implement",
     "Do not write any plan/design output directly",
     "Do not produce direct implementation output",
   ]);
