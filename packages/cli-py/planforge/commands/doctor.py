@@ -377,7 +377,7 @@ def run_doctor_ai(args: list[str]) -> None:
         if a == "--model" and i + 1 < len(args):
             model_arg = args[i + 1]
 
-    prompts_path = Path(get_templates_root()) / "doctor-ai" / "prompts.json"
+    prompts_path = Path(get_templates_root()) / "doctor" / "prompts.json"
     if not prompts_path.exists():
         raise FileNotFoundError(
             f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
