@@ -294,6 +294,7 @@ def run_doctor(args: list[str]) -> None:
 
     if any(status == "error" for _, status, _ in checks):
         raise SystemExit(1)
+    sys.exit(0)
 
 
 def _load_workflow_mdc(project_root: str) -> str:

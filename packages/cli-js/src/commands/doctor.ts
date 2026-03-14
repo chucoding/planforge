@@ -241,6 +241,7 @@ export async function runDoctor(_args: string[]): Promise<void> {
   if (hasError) {
     process.exit(1);
   }
+  process.exit(0);
 }
 
 export interface DoctorAiModelOption {
