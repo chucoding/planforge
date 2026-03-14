@@ -4,22 +4,24 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
-from planforge.utils.shell import has_command
-from planforge.utils.paths import get_templates_root
+from planforge.utils.shell import has_command, resolve_command_path_with_npm_fallback
+from planforge.utils.paths import get_prompts_dir
+from planforge.utils.prompt import load_prompt
 
-DEFAULT_PLANNER_FALLBACK = (
-    "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, "
-    "Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist."
-)
-DEFAULT_IMPLEMENTER_FALLBACK = (
-    "Implement the user request. Produce code or concrete changes as requested."
-)
+
+CODEX_NOT_FOUND_MSG = "codex not found in PATH or common locations. Install: npm install -g @openai/codex"
+CODEX_ONE_TURN_TIMEOUT_S = 300
+
+
+def _resolve_codex_exe() -> str | None:
+    return resolve_command_path_with_npm_fallback("codex")
 
 
 def check_codex() -> bool:
-    return has_command("codex")
+    return has_command("codex") or _resolve_codex_exe() is not None
 
 
 def complete_one_turn(
@@ -35,8 +37,29 @@ def complete_one_turn(
     return _run_codex_exec(full_prompt, cwd, allow_plan_fallback=False)
 
 
-def _get_repo_root() -> str:
-    return str(Path(get_templates_root()).parent)
+def stream_one_turn(
+    system_prompt: str,
+    user_message: str,
+    on_chunk,
+    *,
+    cwd: str | None = None,
+    model: str | None = None,
+) -> str:
+    """Stream a single doctor-ai turn through the callback and return the full response."""
+    del model
+    cwd = cwd or os.getcwd()
+    full_prompt = system_prompt.strip() + "\n\n---\n\nUser: " + user_message.strip()
+    try:
+        return _run_codex_exec_streaming(
+            full_prompt,
+            cwd,
+            allow_plan_fallback=False,
+            write_stdout=False,
+            on_chunk=on_chunk,
+            timeout=CODEX_ONE_TURN_TIMEOUT_S,
+        )
+    except Exception as e:
+        raise RuntimeError("Codex stream_one_turn failed: " + str(e)) from e
 
 
 def _looks_like_plan(stdout: str) -> bool:
@@ -61,14 +84,18 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
     return stdout if it looks like a plan (e.g. Codex 1 due to rollout/cache). Other non-zero
     (timeout, signals) are never accepted. For implement, leave False so non-zero is always failure.
     """
-    max_buffer = 1024 * 1024
+    exe = _resolve_codex_exe()
+    if not exe:
+        raise RuntimeError(CODEX_NOT_FOUND_MSG)
+
     if os.name == "nt":
         fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-")
         try:
             os.write(fd, full_prompt.encode("utf-8"))
             os.close(fd)
             escaped = temp_path.replace("'", "''")
-            script = f"codex exec (Get-Content -Raw -LiteralPath '{escaped}')"
+            escaped_exe = exe.replace("'", "''")
+            script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | & '{escaped_exe}' exec -"
             result = subprocess.run(
                 ["powershell", "-NoProfile", "-Command", script],
                 cwd=cwd,
@@ -90,7 +117,7 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
             except OSError:
                 pass
     result = subprocess.run(
-        ["codex", "exec", full_prompt],
+        [exe, "exec", full_prompt],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -106,25 +133,124 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
     return out
 
 
+def _run_codex_exec_streaming(
+    full_prompt: str,
+    cwd: str,
+    *,
+    allow_plan_fallback: bool = False,
+    write_stdout: bool = True,
+    on_chunk=None,
+    timeout: int | None = None,
+) -> str:
+    """Run codex exec with streaming: forward stdout/stderr to the current process so the user
+    sees logs in real time. Returns collected stdout when done. When allow_plan_fallback is True
+    (plan only), exit code 1 may still return stdout if it looks like a plan.
+    """
+    exe = _resolve_codex_exe()
+    if not exe:
+        raise RuntimeError(CODEX_NOT_FOUND_MSG)
+
+    stdout_chunks: list[str] = []
+
+    def read_stdout(proc: subprocess.Popen) -> None:
+        if proc.stdout is None:
+            return
+        for line in iter(proc.stdout.readline, ""):
+            stdout_chunks.append(line)
+            if on_chunk is not None:
+                on_chunk(line)
+            if write_stdout:
+                sys.stdout.write(line)
+                sys.stdout.flush()
+
+    def read_stderr(proc: subprocess.Popen) -> None:
+        if proc.stderr is None:
+            return
+        for line in iter(proc.stderr.readline, ""):
+            sys.stderr.write(line)
+            sys.stderr.flush()
+
+    if os.name == "nt":
+        fd, temp_path = tempfile.mkstemp(suffix=".txt", prefix="planforge-")
+        try:
+            os.write(fd, full_prompt.encode("utf-8"))
+            os.close(fd)
+            escaped = temp_path.replace("'", "''")
+            escaped_exe = exe.replace("'", "''")
+            script = f"Get-Content -Raw -LiteralPath '{escaped}' -Encoding UTF8 | & '{escaped_exe}' exec -"
+            proc = subprocess.Popen(
+                ["powershell", "-NoProfile", "-Command", script],
+                cwd=cwd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+        except Exception:
+            try:
+                os.unlink(temp_path)
+            except OSError:
+                pass
+            raise
+    else:
+        proc = subprocess.Popen(
+            [exe, "exec", full_prompt],
+            cwd=cwd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        temp_path = None
+
+    t_out = threading.Thread(target=read_stdout, args=(proc,))
+    t_err = threading.Thread(target=read_stderr, args=(proc,))
+    t_out.daemon = True
+    t_err.daemon = True
+    t_out.start()
+    t_err.start()
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired as exc:
+        proc.kill()
+        raise RuntimeError(f"Codex streaming timed out after {timeout}s") from exc
+
+    if temp_path is not None:
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+
+    t_out.join(timeout=1.0)
+    t_err.join(timeout=1.0)
+
+    out = "".join(stdout_chunks).strip()
+    if proc.returncode == 0:
+        return out
+    if allow_plan_fallback and proc.returncode == 1 and _looks_like_plan(out):
+        print(
+            "Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.",
+            file=sys.stderr,
+        )
+        return out
+    raise RuntimeError("Codex exited with code " + str(proc.returncode))
+
+
 def run_plan(goal: str, opts: dict | None = None) -> str:
     opts = opts or {}
     cwd = opts.get("cwd") or os.getcwd()
-    repo_root = _get_repo_root()
-    default_path = Path(repo_root) / "packages" / "core" / "prompts" / "planner-system.md"
+    prompts_dir = Path(get_prompts_dir())
+    default_path = prompts_dir / "planner-system.md"
     prompt_path = opts.get("systemPromptPath") or str(default_path)
-    try:
-        body = Path(prompt_path).read_text(encoding="utf-8").strip()
-    except (OSError, ValueError):
-        body = DEFAULT_PLANNER_FALLBACK
+    body = Path(prompt_path).read_text(encoding="utf-8").strip()
     if (opts.get("projectContext") or "").strip():
         body += f"\n\n---\n\nProject context ({opts.get('projectContextSource') or 'AGENTS.md'}):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("repoContext") or "").strip():
         body += "\n\n---\n\nRepository context:\n" + (opts["repoContext"] or "").strip()
     if (opts.get("context") or "").strip():
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
+    body += "\n\n---\n\n" + load_prompt(prompts_dir / "append-i18n.md") + "\n\n" + load_prompt(prompts_dir / "append-slug.md")
     full_prompt = body + "\n\n---\n\nUser goal: " + goal
     try:
-        return _run_codex_exec(full_prompt, cwd, allow_plan_fallback=True)
+        return _run_codex_exec_streaming(full_prompt, cwd, allow_plan_fallback=True)
     except Exception as e:
         raise RuntimeError("Codex plan failed: " + str(e)) from e
 
@@ -132,13 +258,10 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
 def run_implement(prompt: str, opts: dict | None = None) -> str:
     opts = opts or {}
     cwd = opts.get("cwd") or os.getcwd()
-    repo_root = _get_repo_root()
-    default_path = Path(repo_root) / "packages" / "core" / "prompts" / "implementer-system.md"
+    prompts_dir = Path(get_prompts_dir())
+    default_path = prompts_dir / "implementer-system.md"
     prompt_path = opts.get("systemPromptPath") or str(default_path)
-    try:
-        body = Path(prompt_path).read_text(encoding="utf-8").strip()
-    except (OSError, ValueError):
-        body = DEFAULT_IMPLEMENTER_FALLBACK
+    body = Path(prompt_path).read_text(encoding="utf-8").strip()
     if (opts.get("projectContext") or "").strip():
         body += f"\n\n---\n\nProject context ({opts.get('projectContextSource') or 'AGENTS.md'}):\n" + (opts["projectContext"] or "").strip()
     if (opts.get("context") or "").strip():

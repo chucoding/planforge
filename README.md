@@ -29,8 +29,10 @@ Example:
 The plan is saved to:
 
 ```text
-.cursor/plans/<summary>-<hash>.plan.md
+.cursor/plans/YYYY-MM-DD/{HHMM}-<summary>.plan.md
 ```
+
+Plans live under `.cursor` so that opening a `*.plan.md` file in Cursor shows the **Build** button. If a plan file is occasionally unreadable in the IDE, reopen it or run `planforge implement` from the terminal.
 
 Then:
 
@@ -55,13 +57,13 @@ Both skills are script-first by design: they must execute the bundled `.cursor/s
 
 | Command | Description |
 | ------- | ----------- |
-| `planforge init` | Shows provider check (Claude/Codex) first; detects providers, optionally installs CLI; runs `claude /init` when Claude is available, creates `AGENTS.md` when Codex is available, and creates or suggests `planforge.json`, `.cursor/plans`, skills, and rules. Use `--skip-provider-install` to skip provider prompt. |
-| `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/<summary>-<hash>.plan.md` using the planner from `planforge.json`. Context is loaded from `--context-dir` (default: `.cursor/context`) and merged from markdown files by recent mtime. Project instructions prefer `CLAUDE.md` for Claude and `AGENTS.md` for Codex, with fallback to the other file. |
-| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. Uses active plan from `.cursor/plans/index.json` (`activePlan`) or latest `.plan.md` unless `--plan-file` is set. Context is loaded from `--context-dir` (default: `.cursor/context`). Project instructions prefer `CLAUDE.md` for Claude and `AGENTS.md` for Codex, with fallback to the other file. |
+| `planforge init` | Shows provider check (Claude/Codex) first; detects providers, optionally installs CLI; runs `claude /init` when Claude is available, creates `AGENTS.md` when Codex is available, and creates or suggests `planforge.json`, `.cursor/plans`, `.cursor/contexts`, skills, and rules. Use `--skip-provider-install` to skip provider prompt. |
+| `planforge plan "<goal>"` | Generate a plan and save to `.cursor/plans/YYYY-MM-DD/{HHMM}-<summary>.plan.md` using the planner from `planforge.json`. Context is loaded from `--context-dir` (default: `.cursor/contexts`) and merged from markdown files by recent mtime. Project instructions prefer `CLAUDE.md` for Claude and `AGENTS.md` for Codex, with fallback to the other file. |
+| `planforge implement "<prompt>"` | Run implementation using the implementer from `planforge.json`. Uses active plan from `.cursor/plans/index.json` (`activePlan`) or the latest dated `.plan.md` unless `--plan-file` is set. Context is loaded from `--context-dir` (default: `.cursor/contexts`). Project instructions prefer `CLAUDE.md` for Claude and `AGENTS.md` for Codex, with fallback to the other file. |
 | `planforge config show` | Print current `planforge.json`. |
 | `planforge config suggest [--apply]` | Show suggested config for installed providers; `--apply` writes it to `planforge.json`. |
-| `planforge doctor` | Check Claude/Codex CLI, provider instruction files (`CLAUDE.md`/`AGENTS.md`), `planforge.json`, `.cursor/plans`. |
-| `planforge doctor ai` | Run workflow compliance tests with AI: list models (from planforge.json), show selection UI with (recommended) for current planner, then run TC1/TC2. Use `--provider` and `--model` to skip UI. |
+| `planforge doctor` | Check Claude/Codex CLI, provider instruction files (`CLAUDE.md`/`AGENTS.md`), `planforge.json`, `.cursor/plans`, and `.cursor/contexts`. |
+| `planforge doctor ai` | Run workflow compliance tests with AI: same interactive UI as `planforge model` (mode → provider → model, with cheapest model marked (recommended)). Uses models from `models.json` when available. Use `--provider` and `--model` to skip UI. |
 | `planforge install [-f]` | Install `.cursor/skills` and `.cursor/rules`; `-f` overwrites existing `planforge.json`. |
 
 ## Installation
@@ -97,7 +99,7 @@ Flow:
 3. Sign-in handoff to installed CLI when needed.
 4. Optional install of the other provider.
 5. Create or update `planforge.json` (default config is generated from installed providers).
-6. Run `claude /init` when Claude is available, create `AGENTS.md` when Codex is available, then install Cursor skills/rules and create `.cursor/plans` and `.cursor/context`.
+6. Run `claude /init` when Claude is available, create `AGENTS.md` when Codex is available, then install Cursor skills/rules and create `.cursor/plans` and `.cursor/contexts`.
 
 Use `--skip-provider-install` to skip provider installation prompts and only set up config/directories.
 
@@ -113,7 +115,7 @@ When `planforge.json` is missing or created by init, default config is chosen fr
 
 Run `planforge config suggest` to preview, or `planforge config suggest --apply` to write.
 
-**Doctor AI**: `planforge doctor ai` shows available models (from planforge.json when CLI does not provide a free model list), lets you choose which AI to run workflow tests with, and marks the current planner in planforge.json as **(recommended)**. It then runs two tests (plan request, implement request) and reports pass/fail.
+**Doctor AI**: `planforge doctor ai` uses the same interactive model selection as `planforge model` (mode → provider → model, with effort/reasoning). The model list comes from `models.json` when available; the cheapest model (last in each provider’s list) is shown as **(recommended)**. It then runs workflow tests (plan request, implement request, etc.) and reports pass/fail.
 
 ## Example Structure
 
@@ -125,11 +127,16 @@ repo/
   AGENTS.md   # Codex project instructions
   planforge.json
   .cursor/
-    context/        # conversation context markdown (*.md, merged by recency)
-    plans/          # *.plan.md from /p
+    plans/
+      YYYY-MM-DD/
+        HHMM-*.plan.md   # plan files (HHMM = time 24h)
+      index.json        # activePlan
+    contexts/
+      YYYY-MM-DD/
+        HHMM-*.md       # conversation context markdown, merged by recency
     skills/
-      p/            # /p -> planforge plan
-      i/            # /i -> planforge implement
+      p/                # /p -> planforge plan
+      i/                # /i -> planforge implement
     rules/
 ```
 

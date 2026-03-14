@@ -1,16 +1,16 @@
 /**
- * planforge plan <goal> - generate .cursor/plans/<summary>-<hash>.plan.md via configured planner provider
+ * planforge plan <goal> - generate dated .plan.md files via configured planner provider
  */
 
 import fs from "fs-extra";
-import { resolve } from "path";
-import { randomBytes } from "crypto";
+import { relative, resolve } from "path";
 import { spawnSync } from "child_process";
 import { romanize } from "@daun_jung/korean-romanizer";
-import { getProjectRoot, getPlansDir } from "../utils/paths.js";
+import { getProjectRoot, getPlansDir, getDatedPlansDir, getDateParts } from "../utils/paths.js";
 import { getRepoContext } from "../utils/repo-context.js";
 import { getProjectContext } from "../utils/project-context.js";
 import { loadMergedContext } from "../utils/context.js";
+import { fetchUrlsContext } from "../utils/url-fetch.js";
 import { loadConfig } from "../config/load.js";
 import { getPlannerRunner } from "../providers/registry.js";
 
@@ -45,9 +45,6 @@ function slugifyForFilename(text: string): string {
   return isSlugValid(s) ? s : "";
 }
 
-function shortHash(): string {
-  return randomBytes(4).toString("hex");
-}
 
 /** Extract first # title or first non-empty line from plan markdown for use as slug source. */
 function extractTitleFromPlanBody(planBody: string): string {
@@ -60,15 +57,44 @@ function extractTitleFromPlanBody(planBody: string): string {
   return (match ? match[1].trim() : line).slice(0, 80);
 }
 
+/** Pattern for "Filename slug: <slug>" at end of plan. Slug: 1–3 segments, lowercase alphanumeric + hyphens, max 2 hyphens. */
+const FILENAME_SLUG_RE = /Filename slug:\s*([a-z0-9]+(?:-[a-z0-9]+){0,2})\s*$/im;
+
+/** Parse slug from plan body if present and valid (ASCII, max 2 hyphens). Returns null if missing or invalid. */
+function parseSlugFromPlanBody(planBody: string): string | null {
+  const m = planBody.match(FILENAME_SLUG_RE);
+  if (!m) return null;
+  const slug = m[1].trim().toLowerCase();
+  if (!slug || (slug.match(/-/g)?.length ?? 0) > 2) return null;
+  if (!/^[a-z0-9-]+$/.test(slug)) return null;
+  return isSlugValid(slug) ? slug : null;
+}
+
+/** Remove the "Filename slug: ..." line from plan body so it is not shown in the saved file. */
+function stripFilenameSlugLine(planBody: string): string {
+  const lines = planBody.split(/\r?\n/);
+  const filtered = lines.filter((line) => !/^\s*Filename slug:\s*.+$/i.test(line.trim()));
+  return filtered.join("\n").trimEnd();
+}
+
+/** Limit slug to at most 2 hyphens by taking first 3 segments. */
+function limitSlugHyphens(slug: string): string {
+  const parts = slug.split("-");
+  if (parts.length <= 3) return slug;
+  return parts.slice(0, 3).join("-");
+}
+
 export interface PlanCliOpts {
   contextDir?: string;
   context?: string;
+  /** When set, use this slug for the plan output filename (HHMM-<slug>.plan.md). Validated and hyphen-limited. */
+  slug?: string;
 }
 
 export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void> {
   const goal = args.join(" ").trim();
   if (!goal) {
-    console.error("Usage: planforge plan <goal>");
+    console.error("Usage: planforge plan <goal> [--slug <slug>]");
     process.exit(1);
   }
 
@@ -78,13 +104,15 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
   let context: string | undefined;
   try {
     context = await loadMergedContext(projectRoot, {
-      contextDir: opts?.contextDir ?? config.contextDir,
+      contextDir: opts?.contextDir,
       inlineContext: opts?.context,
     });
   } catch (err) {
     console.error("Failed to load context:", (err as Error).message);
     process.exit(1);
   }
+  const urlContext = await fetchUrlsContext(goal);
+  if (urlContext) context = urlContext + "\n\n" + (context ?? "");
   const runner = getPlannerRunner(config.planner.provider);
 
   if (!runner) {
@@ -111,38 +139,53 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       projectContext,
       projectContextSource,
     });
-    const asciiOnly = config.planner.asciiSlug ?? process.env.PLANFORGE_ASCII_SLUG === "1";
-    let slug = asciiOnly ? slugifyAscii(goal) : slugifyForFilename(goal);
-    if (!isSlugValid(slug)) {
-      try {
-        const romanized = romanize(goal);
-        slug = slugifyAscii(romanized);
-      } catch {
-        /* ignore romanization errors */
-      }
-    }
-    if (!isSlugValid(slug)) {
-      const title = extractTitleFromPlanBody(planBody);
-      if (title) {
-        slug = asciiOnly ? slugifyAscii(title) : slugifyForFilename(title);
+    const bodyToWrite = stripFilenameSlugLine(planBody);
+    let slug: string;
+    if (opts?.slug?.trim()) {
+      const raw = opts.slug.trim().toLowerCase().replace(/[^a-z0-9-]/g, "").replace(/-+/g, "-").replace(/^-|-$/g, "");
+      slug = isSlugValid(raw) ? limitSlugHyphens(raw) : "plan";
+    } else {
+      slug = parseSlugFromPlanBody(planBody) ?? "";
+      if (!slug) {
+        slug = slugifyAscii(goal);
         if (!isSlugValid(slug)) {
           try {
-            slug = slugifyAscii(romanize(title));
+            slug = slugifyAscii(romanize(goal));
           } catch {
-            /* ignore */
+            /* ignore romanization errors */
           }
         }
+        if (!isSlugValid(slug)) {
+          const title = extractTitleFromPlanBody(planBody);
+          if (title) {
+            slug = slugifyAscii(title);
+            if (!isSlugValid(slug)) {
+              try {
+                slug = slugifyAscii(romanize(title));
+              } catch {
+                /* ignore */
+              }
+            }
+          }
+        }
+        if (!isSlugValid(slug)) {
+          slug = "plan";
+        }
+        slug = limitSlugHyphens(slug);
       }
     }
-    if (!isSlugValid(slug)) {
-      slug = "plan";
-    }
-    const hash = shortHash();
+    const now = new Date();
     const plansDir = getPlansDir(projectRoot);
-    await fs.ensureDir(plansDir);
-    const filename = `${slug}-${hash}.plan.md`;
-    const filePath = resolve(plansDir, filename);
-    await fs.writeFile(filePath, planBody, "utf-8");
+    const datedPlansDir = getDatedPlansDir(projectRoot, now);
+    await fs.ensureDir(datedPlansDir);
+    const filename = `${getDateParts(now).hhmm}-${slug}.plan.md`;
+    const filePath = resolve(datedPlansDir, filename);
+    await fs.writeFile(filePath, bodyToWrite, "utf-8");
+    await fs.writeJson(
+      resolve(plansDir, "index.json"),
+      { activePlan: relative(plansDir, filePath).replace(/\\/g, "/") },
+      { spaces: 2 }
+    );
     console.log("Created:", filePath);
     // Open the plan file in Cursor for review (user can then run /i when ready)
     try {

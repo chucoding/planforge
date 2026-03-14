@@ -14,8 +14,9 @@ const required = [
   "config/default-both.json",
   "config/default-claude-only.json",
   "config/default-codex-only.json",
-  "doctor-ai/prompts.json",
-  "cursor/rules/workflow.mdc",
+  "doctor/prompts.json",
+  "cursor/rules/planforge-workflow.mdc",
+  "cursor/rules/planforge-cursor-agent-terminal.mdc",
 ];
 
 const missing = required.filter((rel) => !existsSync(resolve(templatesDir, rel)));

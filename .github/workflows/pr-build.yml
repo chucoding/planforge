@@ -2,7 +2,7 @@ name: PR Build Check
 
 on:
   pull_request:
-    branches: [main, master]
+    branches: [main, develop]
     types: [opened, synchronize, reopened]
 
 permissions:
@@ -16,15 +16,17 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: packages/cli-js/pnpm-lock.yaml
 
       - name: Validate Cursor assets
         run: node scripts/validate_cursor_assets.mjs
@@ -52,7 +54,9 @@ jobs:
       - name: Install build dependencies
         run: pip install hatchling editables
 
-      - name: Build package
+      - name: Install planforge-core from repo
+        run: pip install -e packages/core
+
+      - name: Build and verify Python CLI
         working-directory: packages/cli-py
         run: pip install --no-build-isolation -e .
-        # -e . 로 설치하여 패키지가 정상 빌드·임포트되는지 검증

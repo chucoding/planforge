@@ -5,11 +5,12 @@
 
 import { Command } from "commander";
 import { runInit } from "./commands/init.js";
-import { runDoctor, runDoctorAi } from "./commands/doctor.js";
+import { runDoctor, runDoctorModeSelect, runDoctorAi } from "./commands/doctor.js";
 import { runInstall } from "./commands/install.js";
 import { runPlan } from "./commands/plan.js";
 import { runImplement } from "./commands/implement.js";
 import { runConfigShow, runConfigSuggest } from "./commands/config.js";
+import { runModel } from "./commands/model.js";
 
 const program = new Command();
 
@@ -20,7 +21,7 @@ program
 
 program
   .command("init")
-  .description("Detect providers, run claude /init when available, install Cursor slash commands, create .cursor/plans and planforge.json")
+  .description("Detect providers, run claude /init when available, install Cursor slash commands, create .cursor/plans, .cursor/contexts, and planforge.json")
   .option("--skip-provider-install", "Skip interactive provider (Claude/Codex) install prompt")
   .action(async (opts: { skipProviderInstall?: boolean }) => {
     await runInit(opts.skipProviderInstall ? ["--skip-provider-install"] : []);
@@ -28,13 +29,19 @@ program
 
 const doctorCmd = program
   .command("doctor")
-  .description("Check environment: Claude CLI, Codex CLI, provider instruction files, planforge.json, .cursor/plans");
+  .description("Check environment or run AI workflow tests (static / ai)");
 doctorCmd.action(async () => {
-  await runDoctor([]);
+  await runDoctorModeSelect();
 });
 doctorCmd
+  .command("static")
+  .description("Check environment and providers (Claude/Codex CLI, planforge.json, .cursor/plans, .cursor/contexts)")
+  .action(async () => {
+    await runDoctor([]);
+  });
+doctorCmd
   .command("ai")
-  .description("Run workflow compliance tests with AI (select model, then run TC1/TC2)")
+  .description("Run workflow compliance tests with AI (select planner/implementer, run TC1/TC2/TC3)")
   .option("--provider <name>", "Use this provider (skip interactive selection)")
   .option("--model <name>", "Use this model (use with --provider)")
   .action(async (opts: { provider?: string; model?: string }) => {
@@ -53,12 +60,20 @@ program
   });
 
 program
+  .command("model")
+  .description("Interactive model selection: mode => provider => model (with effort/reasoning). Updates planforge.json.")
+  .action(async () => {
+    await runModel([]);
+  });
+
+program
   .command("plan")
   .description("Generate a development plan and save to .cursor/plans (uses planner from planforge.json)")
   .argument("[goal...]", "Planning goal (e.g. design auth refresh token)")
-  .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/context)")
+  .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/contexts)")
   .option("--context <text>", "Conversation context text to pass to the planner")
-  .action(async (goalParts: string[], opts: { contextDir?: string; context?: string }) => {
+  .option("--slug <slug>", "Override output filename slug (default: from plan body or goal)")
+  .action(async (goalParts: string[], opts: { contextDir?: string; context?: string; slug?: string }) => {
     await runPlan(goalParts, opts);
   });
 
@@ -66,9 +81,9 @@ program
   .command("implement")
   .description("Run implementation (uses implementer from planforge.json)")
   .argument("[prompt...]", "Implementation prompt or task")
-  .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/context)")
+  .option("--context-dir <path>", "Path to markdown context directory (default: .cursor/contexts)")
   .option("--context <text>", "Conversation context text to pass to the implementer")
-  .option("--plan-file <path>", "Path to plan file (default: index.json activePlan or latest .plan.md)")
+  .option("--plan-file <path>", "Path to plan file (default: index.json activePlan or latest dated .plan.md)")
   .option("--files <paths...>", "File paths to focus on (overrides plan's Files Likely to Change)")
   .action(async (promptParts: string[], opts: { contextDir?: string; context?: string; planFile?: string; files?: string[] }) => {
     await runImplement(promptParts, opts);

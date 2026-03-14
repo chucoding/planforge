@@ -129,7 +129,7 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
   let context: string | undefined;
   try {
     context = await loadMergedContext(projectRoot, {
-      contextDir: opts?.contextDir ?? config.contextDir,
+      contextDir: opts?.contextDir,
       inlineContext: opts?.context,
     });
   } catch (err) {

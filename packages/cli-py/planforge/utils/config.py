@@ -10,8 +10,6 @@ from planforge.utils.paths import get_project_root, get_templates_root
 _MERGE_DEFAULTS = {
     "planner": {"provider": "claude", "model": "claude-opus-4-6"},
     "implementer": {"provider": "codex", "model": "gpt-5.4"},
-    "plansDir": ".cursor/plans",
-    "contextDir": ".cursor/context",
 }
 
 
@@ -39,6 +37,30 @@ def get_default_config(has_claude: bool, has_codex: bool) -> dict:
         ) from e
 
 
+def get_default_doctor_ai_config(has_claude: bool, has_codex: bool) -> dict:
+    """Default Doctor AI config (cheap models for workflow tests). Reads templates/doctor/default-*.json."""
+    if has_claude and has_codex:
+        filename = "default-both.json"
+    elif has_claude:
+        filename = "default-claude-only.json"
+    elif has_codex:
+        filename = "default-codex-only.json"
+    else:
+        filename = "default-claude-only.json"
+
+    template_path = Path(get_templates_root()) / "doctor" / filename
+    if not template_path.exists():
+        raise FileNotFoundError(
+            f"Missing doctor template: {template_path}. Run from repo root or ensure templates exist."
+        )
+    try:
+        return json.loads(template_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as e:
+        raise RuntimeError(
+            f"Missing or invalid template: {template_path}. Run from repo root or ensure templates exist."
+        ) from e
+
+
 def load_config(project_root: str | None = None) -> dict:
     """Load planforge.json for runtime commands (plan, implement, doctor). No template fallback. Raises if missing."""
     cwd = project_root or str(Path.cwd())
@@ -55,6 +77,4 @@ def load_config(project_root: str | None = None) -> dict:
     return {
         "planner": {**_MERGE_DEFAULTS["planner"], **planner, "provider": planner.get("provider", _MERGE_DEFAULTS["planner"]["provider"])},
         "implementer": {**_MERGE_DEFAULTS["implementer"], **implementer, "provider": implementer.get("provider", _MERGE_DEFAULTS["implementer"]["provider"])},
-        "plansDir": data.get("plansDir", _MERGE_DEFAULTS["plansDir"]),
-        "contextDir": data.get("contextDir", _MERGE_DEFAULTS["contextDir"]),
     }

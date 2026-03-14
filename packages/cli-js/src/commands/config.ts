@@ -21,9 +21,7 @@ export function formatRole(config: PlanForgeConfig, role: "planner" | "implement
 export function configEqual(a: PlanForgeConfig, b: PlanForgeConfig): boolean {
   return (
     JSON.stringify(a.planner) === JSON.stringify(b.planner) &&
-    JSON.stringify(a.implementer) === JSON.stringify(b.implementer) &&
-    a.plansDir === b.plansDir &&
-    a.contextDir === b.contextDir
+    JSON.stringify(a.implementer) === JSON.stringify(b.implementer)
   );
 }
 

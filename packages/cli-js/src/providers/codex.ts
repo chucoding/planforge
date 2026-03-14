@@ -7,16 +7,25 @@ import { spawnSync, spawn } from "child_process";
 import { writeFileSync, unlinkSync } from "fs";
 import { tmpdir } from "os";
 import { readFile } from "fs/promises";
-import { resolve, dirname, join } from "path";
-import { hasCommand } from "../utils/shell.js";
-import { getTemplatesRoot } from "../utils/paths.js";
+import { resolve, join } from "path";
+import { hasCommand, resolveCommandPathWithNpmFallback } from "../utils/shell.js";
+import { getPromptsDir } from "../utils/paths.js";
+import { loadPrompt } from "../utils/prompt.js";
 import type { PlanOpts, ImplementOpts } from "./registry.js";
 
 /** npm package for global install: npm install -g @openai/codex */
 export const CLIENT_NPM_PACKAGE = "@openai/codex";
 
+/**
+ * Resolve full path to codex executable. Tries PATH first, then common install
+ * locations so it works in sandboxed environments (e.g. Cursor agent) where PATH may be restricted.
+ */
+function resolveCodexExe(): string | null {
+  return resolveCommandPathWithNpmFallback("codex");
+}
+
 export function checkCodex(): boolean {
-  return hasCommand("codex");
+  return hasCommand("codex") || resolveCodexExe() !== null;
 }
 
 /**
@@ -24,7 +33,7 @@ export function checkCodex(): boolean {
  * Used by doctor ai to show model choices; falls back to planforge.json when null.
  */
 export async function listModelsCodex(): Promise<string[] | null> {
-  if (!hasCommand("codex")) return null;
+  if (resolveCodexExe() === null) return null;
   return null;
 }
 
@@ -32,6 +41,14 @@ export interface CompleteOneTurnOpts {
   cwd?: string;
   model?: string;
 }
+
+interface StreamExecOpts {
+  writeStdout?: boolean;
+  onChunk?: (chunk: string) => void;
+  timeoutMs?: number;
+}
+
+const CODEX_ONE_TURN_TIMEOUT_MS = 300_000;
 
 /**
  * Single-turn completion for doctor ai workflow tests. Sends systemPrompt + userMessage and returns response text.
@@ -46,8 +63,26 @@ export async function completeOneTurn(
   return runCodexExec(fullPrompt, cwd, false);
 }
 
-function getRepoRoot(): string {
-  return dirname(getTemplatesRoot());
+export async function streamOneTurn(
+  systemPrompt: string,
+  userMessage: string,
+  onChunk: (chunk: string) => void,
+  opts?: CompleteOneTurnOpts
+): Promise<string> {
+  const cwd = opts?.cwd ?? process.cwd();
+  const fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser: " + userMessage.trim();
+  try {
+    return await runCodexExecStreaming(fullPrompt, cwd, false, {
+      writeStdout: false,
+      onChunk,
+      timeoutMs: CODEX_ONE_TURN_TIMEOUT_MS,
+    });
+  } catch (err) {
+    const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
+      ?? (err as { stderr?: string }).stderr
+      ?? (err as Error).message;
+    throw new Error("Codex streamOneTurn failed: " + msg);
+  }
 }
 
 /**
@@ -73,7 +108,13 @@ function looksLikePlan(stdout: string): boolean {
  * When allowPlanFallback is true, non-zero exit is still treated as success if stdout looks like a plan
  * (used only for runPlan; runImplement must not treat non-zero as success).
  */
+const CODEX_NOT_FOUND_MSG =
+  "codex not found in PATH or common locations. Install: npm install -g @openai/codex";
+
 function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false): string {
+  const exe = resolveCodexExe();
+  if (!exe) throw new Error(CODEX_NOT_FOUND_MSG);
+
   const opts = { cwd, encoding: "utf-8" as const, maxBuffer: 1024 * 1024 };
 
   if (process.platform === "win32") {
@@ -81,7 +122,8 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
     try {
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | codex exec -`;
+      const escapedExe = exe.replace(/'/g, "''");
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | & '${escapedExe}' exec -`;
       const result = spawnSync("powershell", ["-NoProfile", "-Command", script], opts);
       const out = (result.stdout ?? "").trim();
       if (result.status !== 0) {
@@ -102,7 +144,7 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
     }
   }
 
-  const result = spawnSync("codex", ["exec", fullPrompt], { ...opts, shell: false });
+  const result = spawnSync(exe, ["exec", fullPrompt], { ...opts, shell: false });
   const out = (result.stdout ?? "").trim();
   if (result.status !== 0) {
     if (allowPlanFallback && result.status === 1 && looksLikePlan(out)) {
@@ -118,109 +160,151 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
 /**
  * Run "codex exec" with streaming: forward stdout/stderr to the current process so the user
  * sees logs in real time (e.g. in Cursor chat terminal). Returns collected stdout when done.
+ * When allowPlanFallback is true (plan only), exit code 1 may still resolve with collected
+ * stdout if it looks like a plan (e.g. Codex 1 due to rollout/cache).
  */
-function runCodexExecStreaming(fullPrompt: string, cwd: string): Promise<string> {
+function runCodexExecStreaming(
+  fullPrompt: string,
+  cwd: string,
+  allowPlanFallback = false,
+  streamOpts?: StreamExecOpts
+): Promise<string> {
+  const exe = resolveCodexExe();
+  if (!exe) return Promise.reject(new Error(CODEX_NOT_FOUND_MSG));
+
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
     const opts = { cwd };
+    const writeStdout = streamOpts?.writeStdout ?? true;
+    let settled = false;
+
+    const finish = (code: number | null) => {
+      if (settled) return;
+      const out = Buffer.concat(chunks).toString("utf-8").trim();
+      if (code === 0) {
+        settled = true;
+        resolve(out);
+        return;
+      }
+      if (allowPlanFallback && code === 1 && looksLikePlan(out)) {
+        console.error("Warning: Codex exited with code 1 but stdout looks like a plan; saving it anyway.");
+        settled = true;
+        resolve(out);
+        return;
+      }
+      const stderr = Buffer.concat(stderrChunks).toString("utf-8").trim();
+      settled = true;
+      reject(new Error(stderr || "Codex exited with code " + code));
+    };
+
+    const handleStdout = (chunk: Buffer) => {
+      chunks.push(chunk);
+      const text = chunk.toString("utf-8");
+      streamOpts?.onChunk?.(text);
+      if (writeStdout) {
+        process.stdout.write(chunk);
+      }
+    };
+
+    const handleStderr = (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+      process.stderr.write(chunk);
+    };
 
     if (process.platform === "win32") {
       const tempPath = join(tmpdir(), "planforge-" + randomBytes(8).toString("hex") + ".txt");
       writeFileSync(tempPath, fullPrompt, "utf-8");
       const escapedPath = tempPath.replace(/'/g, "''");
-      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | codex exec -`;
+      const escapedExe = exe.replace(/'/g, "''");
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | & '${escapedExe}' exec -`;
       const child = spawn("powershell", ["-NoProfile", "-Command", script], {
         ...opts,
         stdio: ["ignore", "pipe", "pipe"],
       });
+      const timeout = setTimeout(() => {
+        child.kill();
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Codex streaming timed out after ${Math.floor((streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS) / 1000)}s`));
+        }
+      }, streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS);
       child.on("close", (code) => {
+        clearTimeout(timeout);
         try {
           unlinkSync(tempPath);
         } catch {
           // ignore
         }
-        if (code !== 0) {
-          reject(new Error("Codex exited with code " + code));
-          return;
+        finish(code);
+      });
+      child.stdout?.on("data", handleStdout);
+      child.stderr?.on("data", handleStderr);
+      child.on("error", (err) => {
+        clearTimeout(timeout);
+        if (!settled) {
+          settled = true;
+          reject(err);
         }
-        resolve(Buffer.concat(chunks).toString("utf-8").trim());
-      });
-      child.stdout?.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-        process.stdout.write(chunk);
-      });
-      child.stderr?.on("data", (chunk: Buffer) => {
-        process.stderr.write(chunk);
       });
       return;
     }
 
-    const child = spawn("codex", ["exec", fullPrompt], {
+    const child = spawn(exe, ["exec", fullPrompt], {
       ...opts,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    child.stdout?.on("data", (chunk: Buffer) => {
-      chunks.push(chunk);
-      process.stdout.write(chunk);
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      process.stderr.write(chunk);
-    });
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error("Codex exited with code " + code));
-        return;
+    const timeout = setTimeout(() => {
+      child.kill();
+      if (!settled) {
+        settled = true;
+        reject(new Error(`Codex streaming timed out after ${Math.floor((streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS) / 1000)}s`));
       }
-      resolve(Buffer.concat(chunks).toString("utf-8").trim());
+    }, streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS);
+    child.stdout?.on("data", handleStdout);
+    child.stderr?.on("data", handleStderr);
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      finish(code);
     });
-    child.on("error", (err) => reject(err));
+    child.on("error", (err) => {
+      clearTimeout(timeout);
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
   });
 }
-
-const DEFAULT_PLANNER_FALLBACK =
-  "Produce a development plan with sections: Goal, Assumptions, Relevant Codebase Areas, Proposed Changes, Step-by-Step Plan, Files Likely to Change, Risks, Validation Checklist.";
 
 /**
  * Run Codex to generate a plan. Returns plan markdown.
  */
 export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const cwd = opts?.cwd ?? process.cwd();
-  const repoRoot = getRepoRoot();
-  const defaultPromptPath = resolve(repoRoot, "packages", "core", "prompts", "planner-system.md");
-
-  let fullPrompt: string;
-  try {
-    const systemPrompt = await readFile(
-      opts?.systemPromptPath ?? defaultPromptPath,
-      "utf-8"
-    );
-    let body = systemPrompt.trim();
-    if (opts?.projectContext?.trim()) {
-      body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
-    }
-    if (opts?.repoContext?.trim()) {
-      body += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
-    }
-    if (opts?.context?.trim()) {
-      body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
-    }
-    fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
-  } catch {
-    let fallback = DEFAULT_PLANNER_FALLBACK;
-    if (opts?.projectContext?.trim()) {
-      fallback += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
-    }
-    if (opts?.repoContext?.trim()) {
-      fallback += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
-    }
-    if (opts?.context?.trim()) {
-      fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
-    }
-    fullPrompt = fallback + "\n\n---\n\nUser goal: " + goal;
+  const promptsDir = getPromptsDir();
+  const defaultPromptPath = resolve(promptsDir, "planner-system.md");
+  const systemPrompt = await readFile(
+    opts?.systemPromptPath ?? defaultPromptPath,
+    "utf-8"
+  );
+  let body = systemPrompt.trim();
+  if (opts?.projectContext?.trim()) {
+    body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
   }
+  if (opts?.repoContext?.trim()) {
+    body += "\n\n---\n\nRepository context:\n" + opts.repoContext.trim();
+  }
+  if (opts?.context?.trim()) {
+    body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+  }
+  const appendI18n = await loadPrompt(resolve(promptsDir, "append-i18n.md"));
+  const appendSlug = await loadPrompt(resolve(promptsDir, "append-slug.md"));
+  body += "\n\n---\n\n" + appendI18n + "\n\n" + appendSlug;
+  const fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
 
   try {
-    return runCodexExec(fullPrompt, cwd, true);
+    return await runCodexExecStreaming(fullPrompt, cwd, true);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
@@ -229,65 +313,37 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   }
 }
 
-const DEFAULT_IMPLEMENTER_FALLBACK =
-  "Implement the user request. Produce code or concrete changes as requested.";
-
 /**
  * Run Codex to perform implementation. Returns implementation output.
  */
 export async function runImplement(prompt: string, opts?: ImplementOpts): Promise<string> {
   const cwd = opts?.cwd ?? process.cwd();
-  const repoRoot = getRepoRoot();
-  const defaultPromptPath = resolve(repoRoot, "packages", "core", "prompts", "implementer-system.md");
-
-  let fullPrompt: string;
-  try {
-    const systemPrompt = await readFile(
-      opts?.systemPromptPath ?? defaultPromptPath,
-      "utf-8"
-    );
-    let body = systemPrompt.trim();
-    if (opts?.projectContext?.trim()) {
-      body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
-    }
-    if (opts?.context?.trim()) {
-      body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
-    }
-    if (opts?.planContent?.trim()) {
-      body += "\n\n---\n\nCurrent plan (follow this):\n" + opts.planContent.trim();
-    }
-    if (opts?.filesToChange?.length) {
-      body += "\n\n---\n\nFiles to focus on:\n" + opts.filesToChange.join("\n");
-    }
-    if (opts?.recentCommitsPerFile?.trim()) {
-      body += "\n\n---\n\nRecent commit (per file):\n" + opts.recentCommitsPerFile.trim();
-    }
-    if (opts?.codeContext?.trim()) {
-      body += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
-    }
-    fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
-  } catch {
-    let fallback = DEFAULT_IMPLEMENTER_FALLBACK;
-    if (opts?.projectContext?.trim()) {
-      fallback += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
-    }
-    if (opts?.context?.trim()) {
-      fallback += "\n\n---\n\nConversation context:\n" + opts.context.trim();
-    }
-    if (opts?.planContent?.trim()) {
-      fallback += "\n\n---\n\nCurrent plan (follow this):\n" + opts.planContent.trim();
-    }
-    if (opts?.filesToChange?.length) {
-      fallback += "\n\n---\n\nFiles to focus on:\n" + opts.filesToChange.join("\n");
-    }
-    if (opts?.recentCommitsPerFile?.trim()) {
-      fallback += "\n\n---\n\nRecent commit (per file):\n" + opts.recentCommitsPerFile.trim();
-    }
-    if (opts?.codeContext?.trim()) {
-      fallback += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
-    }
-    fullPrompt = fallback + "\n\n---\n\nUser request: " + prompt;
+  const promptsDir = getPromptsDir();
+  const defaultPromptPath = resolve(promptsDir, "implementer-system.md");
+  const systemPrompt = await readFile(
+    opts?.systemPromptPath ?? defaultPromptPath,
+    "utf-8"
+  );
+  let body = systemPrompt.trim();
+  if (opts?.projectContext?.trim()) {
+    body += `\n\n---\n\nProject context (${opts.projectContextSource ?? "AGENTS.md"}):\n${opts.projectContext.trim()}`;
   }
+  if (opts?.context?.trim()) {
+    body += "\n\n---\n\nConversation context:\n" + opts.context.trim();
+  }
+  if (opts?.planContent?.trim()) {
+    body += "\n\n---\n\nCurrent plan (follow this):\n" + opts.planContent.trim();
+  }
+  if (opts?.filesToChange?.length) {
+    body += "\n\n---\n\nFiles to focus on:\n" + opts.filesToChange.join("\n");
+  }
+  if (opts?.recentCommitsPerFile?.trim()) {
+    body += "\n\n---\n\nRecent commit (per file):\n" + opts.recentCommitsPerFile.trim();
+  }
+  if (opts?.codeContext?.trim()) {
+    body += "\n\n---\n\nRelevant file contents:\n" + opts.codeContext.trim();
+  }
+  const fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
 
   try {
     return await runCodexExecStreaming(fullPrompt, cwd);

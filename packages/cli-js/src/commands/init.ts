@@ -1,12 +1,12 @@
 /**
- * planforge init - detect providers, install slash commands, create .cursor/plans
+ * planforge init - detect providers, install slash commands, create .cursor/plans and .cursor/contexts
  */
 
 import * as readline from "readline";
 import { spawnSync } from "child_process";
 import fs from "fs-extra";
 import { resolve } from "path";
-import { getProjectRoot, getPlansDir } from "../utils/paths.js";
+import { getProjectRoot, getPlansDir, getContextDir } from "../utils/paths.js";
 import { checkClaude, CLIENT_NPM_PACKAGE as CLAUDE_PKG } from "../providers/claude.js";
 import { checkCodex, CLIENT_NPM_PACKAGE as CODEX_PKG } from "../providers/codex.js";
 import { runCommand, runCommandLive } from "../utils/shell.js";
@@ -206,11 +206,18 @@ export async function runInit(args: string[]): Promise<void> {
     }
 
     if (hasClaude && !finishedWithCodexOnly) {
-      try {
-        runCommand("claude", ["/init"], projectRoot);
-      } catch (err) {
-        console.warn("Warning: claude /init failed:", (err as Error).message);
-        console.log("  Run 'claude' to sign in.");
+      let runClaudeInit = false;
+      if (process.stdin.isTTY) {
+        const raw = await ask("Run claude /init for this project? (y/n)", "y");
+        runClaudeInit = /^y(es)?$/i.test(raw.trim());
+      }
+      if (runClaudeInit) {
+        try {
+          runCommand("claude", ["/init"], projectRoot);
+        } catch (err) {
+          console.warn("Warning: claude /init failed:", (err as Error).message);
+          console.log("  Run 'claude' to sign in.");
+        }
       }
     }
 
@@ -218,7 +225,7 @@ export async function runInit(args: string[]): Promise<void> {
 
     const plansDir = getPlansDir(projectRoot);
     await fs.ensureDir(plansDir);
-    await fs.ensureDir(resolve(projectRoot, ".cursor", "context"));
+    await fs.ensureDir(getContextDir(projectRoot));
 
     const configPath = resolve(projectRoot, "planforge.json");
     const configExists = await fs.pathExists(configPath);
@@ -259,7 +266,7 @@ export async function runInit(args: string[]): Promise<void> {
       console.log("");
     }
     console.log("  Created .cursor/plans");
-    console.log("  Created .cursor/context");
+    console.log("  Created .cursor/contexts");
     if (createdConfig) {
       console.log("  Created planforge.json");
     } else if (updatedConfig) {

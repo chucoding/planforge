@@ -1,26 +1,46 @@
-import { resolve } from "path";
+import { relative, resolve } from "path";
 import fs from "fs-extra";
+import { getDefaultContextDirs } from "./paths.js";
 
-export async function loadContextDir(cwd: string, contextDir?: string): Promise<string | undefined> {
-  if (!contextDir) return undefined;
-  const base = resolve(cwd, contextDir);
-  if (!(await fs.pathExists(base))) return undefined;
-  const stat = await fs.stat(base);
-  if (!stat.isDirectory()) {
-    throw new Error(`Context path is not a directory: ${contextDir}`);
+async function resolveContextBases(cwd: string, contextDir?: string): Promise<string[]> {
+  if (contextDir) {
+    const base = resolve(cwd, contextDir);
+    if (!(await fs.pathExists(base))) return [];
+    const stat = await fs.stat(base);
+    if (!stat.isDirectory()) {
+      throw new Error(`Context path is not a directory: ${contextDir}`);
+    }
+    return [base];
   }
 
+  const bases: string[] = [];
+  for (const candidate of getDefaultContextDirs(cwd)) {
+    if (!(await fs.pathExists(candidate))) continue;
+    const stat = await fs.stat(candidate);
+    if (!stat.isDirectory()) continue;
+    bases.push(candidate);
+  }
+  return bases;
+}
+
+export async function loadContextDir(cwd: string, contextDir?: string): Promise<string | undefined> {
+  const root = resolve(cwd);
+  const bases = await resolveContextBases(root, contextDir);
+  if (bases.length === 0) return undefined;
+
   const mdPaths: string[] = [];
-  const stack = [base];
-  while (stack.length > 0) {
-    const dir = stack.pop() as string;
-    const entries = await fs.readdir(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const next = resolve(dir, entry.name);
-      if (entry.isDirectory()) {
-        stack.push(next);
-      } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
-        mdPaths.push(next);
+  for (const base of bases) {
+    const stack = [base];
+    while (stack.length > 0) {
+      const dir = stack.pop() as string;
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const next = resolve(dir, entry.name);
+        if (entry.isDirectory()) {
+          stack.push(next);
+        } else if (entry.isFile() && entry.name.toLowerCase().endsWith(".md")) {
+          mdPaths.push(next);
+        }
       }
     }
   }
@@ -36,8 +56,7 @@ export async function loadContextDir(cwd: string, contextDir?: string): Promise<
   for (const item of withMtime) {
     const content = (await fs.readFile(item.path, "utf-8")).trim();
     if (!content) continue;
-    const relative = item.path.slice(base.length + 1).replace(/\\/g, "/");
-    blocks.push(`### ${relative}\n\n${content}`);
+    blocks.push(`### ${relative(root, item.path).replace(/\\/g, "/")}\n\n${content}`);
   }
   if (blocks.length === 0) return undefined;
   return blocks.join("\n\n");

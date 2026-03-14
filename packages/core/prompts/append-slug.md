@@ -1,0 +1,1 @@
+At the very end of the plan, add exactly one line: "Filename slug: <slug>" where <slug> is 2–3 English words in lowercase with hyphens (e.g. add-login-page, implement-i18n). Use at most 2 hyphens. This is used for the plan file name.

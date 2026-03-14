@@ -15,9 +15,10 @@ __pycache__
 # mac
 .DS_Store
 
-# cursor
+# cursor / planforge
+planforge.json
 .cursor/plans
-.cursor/context
+.cursor/contexts
 .cursor/rules/code-comments.mdc
 .cursor/rules/notion.mdc
 .cursor/rules/pr-writing.mdc
