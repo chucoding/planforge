@@ -17,18 +17,30 @@ import type { PlanForgeConfig } from "../config/types.js";
 import { checkClaude, listModelsClaude } from "../providers/claude.js";
 import { checkCodex, listModelsCodex } from "../providers/codex.js";
 import { getOneTurnRunner } from "../providers/registry.js";
-import { fetchUrlContent } from "../utils/url-fetch.js";
 import { loadModelsCatalog, type ModelsCatalog } from "./model.js";
 
-const URL_TEST_URL = "https://example.com";
+const URL_TEST_URL = "https://httpbin.org/get";
 const URL_TEST_TIMEOUT_MS = 5_000;
 
 async function runUrlFetchTc(): Promise<{ passed: boolean; error?: string }> {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), URL_TEST_TIMEOUT_MS);
   try {
-    const body = await fetchUrlContent(URL_TEST_URL, URL_TEST_TIMEOUT_MS);
+    const res = await fetch(URL_TEST_URL, {
+      signal: controller.signal,
+      headers: { "User-Agent": "PlanForge-CLI/1.0" },
+    });
+    clearTimeout(t);
+    if (!res.ok) {
+      return { passed: false, error: `HTTP ${res.status}` };
+    }
+    const body = await res.text();
     return { passed: body.length > 0 };
   } catch (e) {
-    return { passed: false, error: (e as Error).message };
+    clearTimeout(t);
+    const err = e as Error;
+    const message = err.name === "AbortError" ? "timeout" : err.message;
+    return { passed: false, error: message };
   }
 }
 

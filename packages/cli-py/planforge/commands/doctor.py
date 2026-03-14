@@ -4,6 +4,8 @@ import json
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 from planforge.utils.paths import (
@@ -24,20 +26,23 @@ from planforge.providers.codex import (
     stream_one_turn as codex_stream_one_turn,
 )
 from planforge.utils.tui import print_current_ai_config, select_from_list
-from planforge.utils.url_fetch import fetch_url_content
 from planforge.commands.model import _load_models_catalog
 
 DOCTOR_MODE_STATIC = "static"
-URL_TEST_URL = "https://example.com"
+URL_TEST_URL = "https://httpbin.org/get"
 URL_TEST_TIMEOUT_S = 5
 
 
 def _run_url_fetch_tc() -> tuple[bool, str | None]:
-    """Run simple URL fetch test; return (passed, error_message or None)."""
+    """Run simple URL fetch test; return (passed, error_message or None). Surfaces real fetch errors."""
+    req = urllib.request.Request(URL_TEST_URL, headers={"User-Agent": "PlanForge-CLI/1.0"})
     try:
-        body = fetch_url_content(URL_TEST_URL, timeout=URL_TEST_TIMEOUT_S)
-        return (len(body) > 0, None)
-    except Exception as e:
+        with urllib.request.urlopen(req, timeout=URL_TEST_TIMEOUT_S) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+            return (len(body) > 0, None)
+    except urllib.error.HTTPError as e:
+        return (False, f"HTTP {e.code}")
+    except (urllib.error.URLError, OSError, ValueError) as e:
         return (False, str(e))
 
 
