@@ -12,13 +12,73 @@ from planforge.utils.paths import (
     get_templates_root,
 )
 from planforge.utils.config import load_config
-from planforge.providers.claude import check_claude, complete_one_turn as claude_complete_one_turn
-from planforge.providers.codex import check_codex, complete_one_turn as codex_complete_one_turn
+from planforge.providers.claude import (
+    check_claude,
+    complete_one_turn as claude_complete_one_turn,
+    stream_one_turn as claude_stream_one_turn,
+)
+from planforge.providers.codex import (
+    check_codex,
+    complete_one_turn as codex_complete_one_turn,
+    stream_one_turn as codex_stream_one_turn,
+)
 from planforge.utils.tui import wait_key
 from planforge.commands.model import _load_models_catalog
 
 DOCTOR_MODE_STATIC = "static"
 DOCTOR_MODE_AI = "ai"
+
+
+def _run_streaming_doctor_tc(
+    label: str,
+    system_prompt: str,
+    user_message: str,
+    expected_keywords: list[str],
+    provider: str,
+    model: str,
+    project_root: str,
+) -> tuple[bool, str | None]:
+    runner = claude_stream_one_turn if provider == "claude" else codex_stream_one_turn
+    response = ""
+    pass_shown = False
+
+    def render(suffix: str = "") -> None:
+        normalized = " ".join(response.split())
+        sys.stdout.write("\r\033[2K")
+        sys.stdout.write(f"    response: {normalized}{suffix}")
+        sys.stdout.flush()
+
+    print(f"  {label}")
+    sys.stdout.write("    response: ")
+    sys.stdout.flush()
+
+    def _handle_chunk(chunk: str) -> None:
+        nonlocal response, pass_shown
+        response += chunk
+        if not pass_shown and any(keyword in response for keyword in expected_keywords):
+            pass_shown = True
+            render("  [OK] pass")
+            return
+        if not pass_shown:
+            render()
+
+    try:
+        final_response = runner(
+            system_prompt,
+            user_message,
+            _handle_chunk,
+            cwd=project_root,
+            model=model,
+        )
+        response = final_response
+        passed = any(keyword in response for keyword in expected_keywords)
+        render("  [OK] pass" if passed else "  [FAIL]")
+        print("")
+        return passed, None
+    except Exception as e:
+        render("  [FAIL]")
+        print("")
+        return False, str(e)
 
 
 def run_doctor_mode_select() -> None:
@@ -492,26 +552,64 @@ def run_doctor_ai(args: list[str]) -> None:
         tc1_pass = False
         tc2_pass = False
         tc3_pass = False
-        try:
-            tc1_response = planner_complete(system_prompt, tc1_msg, cwd=project_root, model=selected_planner[1])
-            tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
-        except Exception as e:
-            print("TC1 (plan request) error:", e, file=sys.stderr)
-        try:
-            tc2_response = implementer_complete(system_prompt, tc2_msg, cwd=project_root, model=selected_implementer[1])
-            tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
-        except Exception as e:
-            print("TC2 (implement request) error:", e, file=sys.stderr)
-        try:
-            tc3_response = planner_complete(system_prompt, tc3_msg, cwd=project_root, model=selected_planner[1])
-            tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
-        except Exception as e:
-            print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
+        if sys.stdout.isatty():
+            tc1_pass, tc1_error = _run_streaming_doctor_tc(
+                "TC1 (plan request)",
+                system_prompt,
+                tc1_msg,
+                ["planforge plan", "run_plan.sh"],
+                selected_planner[0],
+                selected_planner[1],
+                project_root,
+            )
+            if tc1_error:
+                print("TC1 (plan request) error:", tc1_error, file=sys.stderr)
 
-        print("  TC1 (plan request)     : " + ("[OK] pass" if tc1_pass else "[FAIL]"))
-        print("  TC2 (implement request): " + ("[OK] pass" if tc2_pass else "[FAIL]"))
-        print("  TC3 (/p with implementation-style request): " + ("[OK] pass" if tc3_pass else "[FAIL]"))
-        print("")
+            tc2_pass, tc2_error = _run_streaming_doctor_tc(
+                "TC2 (implement request)",
+                system_prompt,
+                tc2_msg,
+                ["planforge implement", "run_implement.sh"],
+                selected_implementer[0],
+                selected_implementer[1],
+                project_root,
+            )
+            if tc2_error:
+                print("TC2 (implement request) error:", tc2_error, file=sys.stderr)
+
+            tc3_pass, tc3_error = _run_streaming_doctor_tc(
+                "TC3 (/p with implementation-style request)",
+                system_prompt,
+                tc3_msg,
+                ["planforge plan", "run_plan.sh"],
+                selected_planner[0],
+                selected_planner[1],
+                project_root,
+            )
+            if tc3_error:
+                print("TC3 (/p with implementation-style request) error:", tc3_error, file=sys.stderr)
+            print("")
+        else:
+            try:
+                tc1_response = planner_complete(system_prompt, tc1_msg, cwd=project_root, model=selected_planner[1])
+                tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response
+            except Exception as e:
+                print("TC1 (plan request) error:", e, file=sys.stderr)
+            try:
+                tc2_response = implementer_complete(system_prompt, tc2_msg, cwd=project_root, model=selected_implementer[1])
+                tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response
+            except Exception as e:
+                print("TC2 (implement request) error:", e, file=sys.stderr)
+            try:
+                tc3_response = planner_complete(system_prompt, tc3_msg, cwd=project_root, model=selected_planner[1])
+                tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response
+            except Exception as e:
+                print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
+
+            print("  TC1 (plan request)     : " + ("[OK] pass" if tc1_pass else "[FAIL]"))
+            print("  TC2 (implement request): " + ("[OK] pass" if tc2_pass else "[FAIL]"))
+            print("  TC3 (/p with implementation-style request): " + ("[OK] pass" if tc3_pass else "[FAIL]"))
+            print("")
         if not tc1_pass or not tc2_pass or not tc3_pass:
             exit_code = 1
         if not is_interactive:

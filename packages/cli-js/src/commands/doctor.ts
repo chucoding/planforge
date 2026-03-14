@@ -3,6 +3,7 @@
  */
 
 import fs from "fs-extra";
+import readline from "readline";
 import { resolve } from "path";
 import {
   getProjectRoot,
@@ -14,8 +15,9 @@ import {
 import { waitKey } from "../utils/tui.js";
 import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
-import { checkClaude, listModelsClaude, completeOneTurn as claudeCompleteOneTurn } from "../providers/claude.js";
-import { checkCodex, listModelsCodex, completeOneTurn as codexCompleteOneTurn } from "../providers/codex.js";
+import { checkClaude, listModelsClaude } from "../providers/claude.js";
+import { checkCodex, listModelsCodex } from "../providers/codex.js";
+import { getOneTurnRunner } from "../providers/registry.js";
 import { loadModelsCatalog, type ModelsCatalog } from "./model.js";
 
 type Status = "ok" | "warn" | "error";
@@ -231,6 +233,71 @@ export interface DoctorAiModelOption {
   provider: string;
   model: string;
   recommended: boolean;
+}
+
+interface DoctorTcResult {
+  passed: boolean;
+  response: string;
+  error?: string;
+}
+
+async function runStreamingDoctorTc(
+  label: string,
+  systemPrompt: string,
+  userMessage: string,
+  expectedKeywords: string[],
+  provider: string,
+  model: string,
+  cwd: string
+): Promise<DoctorTcResult> {
+  const runner = getOneTurnRunner(provider);
+  if (!runner) {
+    return { passed: false, response: "", error: `Unsupported provider: ${provider}` };
+  }
+
+  let response = "";
+  let passShown = false;
+  const render = (suffix = "") => {
+    const normalized = response.replace(/\s+/g, " ").trim();
+    readline.clearLine(process.stdout, 0);
+    readline.cursorTo(process.stdout, 0);
+    process.stdout.write(`    response: ${normalized}${suffix}`);
+  };
+
+  process.stdout.write(`  ${label}\n`);
+  process.stdout.write("    response: ");
+
+  try {
+    const finalResponse = await runner.streamOneTurn(
+      systemPrompt,
+      userMessage,
+      (chunk) => {
+        response += chunk;
+        if (!passShown && expectedKeywords.some((keyword) => response.includes(keyword))) {
+          passShown = true;
+          render("  [OK] pass");
+          return;
+        }
+        if (!passShown) {
+          render();
+        }
+      },
+      { cwd, model }
+    );
+    response = finalResponse;
+    const passed = expectedKeywords.some((keyword) => response.includes(keyword));
+    render(passed ? "  [OK] pass" : "  [FAIL]");
+    process.stdout.write("\n");
+    return { passed, response };
+  } catch (err) {
+    render("  [FAIL]");
+    process.stdout.write("\n");
+    return {
+      passed: false,
+      response,
+      error: (err as Error).message,
+    };
+  }
 }
 
 function loadWorkflowMdc(projectRoot: string): string {
@@ -530,57 +597,103 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       selectedPlanner = selectedImplementer = options[0];
     }
 
-    const plannerComplete =
-      selectedPlanner.provider === "claude" ? claudeCompleteOneTurn : codexCompleteOneTurn;
-    const implementerComplete =
-      selectedImplementer.provider === "claude" ? claudeCompleteOneTurn : codexCompleteOneTurn;
+    const plannerRunner = getOneTurnRunner(selectedPlanner.provider);
+    const implementerRunner = getOneTurnRunner(selectedImplementer.provider);
+    if (!plannerRunner || !implementerRunner) {
+      throw new Error("Unsupported provider selected for doctor ai");
+    }
 
     console.log("\nRunning workflow tests (planner: " + selectedPlanner.provider + " / " + selectedPlanner.model + ", implementer: " + selectedImplementer.provider + " / " + selectedImplementer.model + ")...\n");
 
     let tc1Pass = false;
     let tc2Pass = false;
     let tc3Pass = false;
-    try {
-      const tc1Response = await plannerComplete(
+    if (process.stdout.isTTY) {
+      const tc1 = await runStreamingDoctorTc(
+        "TC1 (plan request)",
         systemPrompt,
         promptsData.tc1PlanRequest,
-        { cwd: projectRoot, model: selectedPlanner.model }
+        ["planforge plan", "run_plan.sh"],
+        selectedPlanner.provider,
+        selectedPlanner.model,
+        projectRoot
       );
-      tc1Pass =
-        tc1Response.includes("planforge plan") ||
-        tc1Response.includes("run_plan.sh");
-    } catch (e) {
-      console.error("TC1 (plan request) error:", (e as Error).message);
-    }
-    try {
-      const tc2Response = await implementerComplete(
+      tc1Pass = tc1.passed;
+      if (tc1.error) {
+        console.error("TC1 (plan request) error:", tc1.error);
+      }
+
+      const tc2 = await runStreamingDoctorTc(
+        "TC2 (implement request)",
         systemPrompt,
         promptsData.tc2ImplementRequest,
-        { cwd: projectRoot, model: selectedImplementer.model }
+        ["planforge implement", "run_implement.sh"],
+        selectedImplementer.provider,
+        selectedImplementer.model,
+        projectRoot
       );
-      tc2Pass =
-        tc2Response.includes("planforge implement") ||
-        tc2Response.includes("run_implement.sh");
-    } catch (e) {
-      console.error("TC2 (implement request) error:", (e as Error).message);
-    }
-    try {
-      const tc3Response = await plannerComplete(
+      tc2Pass = tc2.passed;
+      if (tc2.error) {
+        console.error("TC2 (implement request) error:", tc2.error);
+      }
+
+      const tc3 = await runStreamingDoctorTc(
+        "TC3 (/p with implementation-style request)",
         systemPrompt,
         promptsData.tc3SlashPWithImplementationStyleContent,
-        { cwd: projectRoot, model: selectedPlanner.model }
+        ["planforge plan", "run_plan.sh"],
+        selectedPlanner.provider,
+        selectedPlanner.model,
+        projectRoot
       );
-      tc3Pass =
-        tc3Response.includes("planforge plan") ||
-        tc3Response.includes("run_plan.sh");
-    } catch (e) {
-      console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
-    }
+      tc3Pass = tc3.passed;
+      if (tc3.error) {
+        console.error("TC3 (/p with implementation-style request) error:", tc3.error);
+      }
+      console.log("");
+    } else {
+      try {
+        const tc1Response = await plannerRunner.completeOneTurn(
+          systemPrompt,
+          promptsData.tc1PlanRequest,
+          { cwd: projectRoot, model: selectedPlanner.model }
+        );
+        tc1Pass =
+          tc1Response.includes("planforge plan") ||
+          tc1Response.includes("run_plan.sh");
+      } catch (e) {
+        console.error("TC1 (plan request) error:", (e as Error).message);
+      }
+      try {
+        const tc2Response = await implementerRunner.completeOneTurn(
+          systemPrompt,
+          promptsData.tc2ImplementRequest,
+          { cwd: projectRoot, model: selectedImplementer.model }
+        );
+        tc2Pass =
+          tc2Response.includes("planforge implement") ||
+          tc2Response.includes("run_implement.sh");
+      } catch (e) {
+        console.error("TC2 (implement request) error:", (e as Error).message);
+      }
+      try {
+        const tc3Response = await plannerRunner.completeOneTurn(
+          systemPrompt,
+          promptsData.tc3SlashPWithImplementationStyleContent,
+          { cwd: projectRoot, model: selectedPlanner.model }
+        );
+        tc3Pass =
+          tc3Response.includes("planforge plan") ||
+          tc3Response.includes("run_plan.sh");
+      } catch (e) {
+        console.error("TC3 (/p with implementation-style request) error:", (e as Error).message);
+      }
 
-    console.log("  TC1 (plan request)     : " + (tc1Pass ? "[OK] pass" : "[FAIL]"));
-    console.log("  TC2 (implement request): " + (tc2Pass ? "[OK] pass" : "[FAIL]"));
-    console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? "[OK] pass" : "[FAIL]"));
-    console.log("");
+      console.log("  TC1 (plan request)     : " + (tc1Pass ? "[OK] pass" : "[FAIL]"));
+      console.log("  TC2 (implement request): " + (tc2Pass ? "[OK] pass" : "[FAIL]"));
+      console.log("  TC3 (/p with implementation-style request): " + (tc3Pass ? "[OK] pass" : "[FAIL]"));
+      console.log("");
+    }
     if (!tc1Pass || !tc2Pass || !tc3Pass) {
       exitCode = 1;
     }

@@ -43,6 +43,12 @@ export interface CompleteOneTurnOpts {
   model?: string;
 }
 
+interface StreamOpts extends CompleteOneTurnOpts {
+  writeStdout?: boolean;
+}
+
+const CLAUDE_ONE_TURN_TIMEOUT_MS = 120_000;
+
 /**
  * Single-turn completion for doctor ai workflow tests. Sends systemPrompt + userMessage and returns response text.
  * On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd directly (CVE-2024-27980).
@@ -110,6 +116,22 @@ export async function completeOneTurn(
       ?? (err as { stderr?: string }).stderr
       ?? (err as Error).message;
     throw new Error("Claude completeOneTurn failed: " + msg);
+  }
+}
+
+export async function streamOneTurn(
+  systemPrompt: string,
+  userMessage: string,
+  onChunk: (chunk: string) => void,
+  opts?: CompleteOneTurnOpts
+): Promise<string> {
+  try {
+    return await runClaudeOneTurnStreaming(systemPrompt, userMessage, opts, onChunk);
+  } catch (err) {
+    const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
+      ?? (err as { stderr?: string }).stderr
+      ?? (err as Error).message;
+    throw new Error("Claude streamOneTurn failed: " + msg);
   }
 }
 
@@ -196,7 +218,12 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
  * sees logs in real time (e.g. in Cursor chat terminal). Returns collected stdout when done.
  * On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd directly (CVE-2024-27980).
  */
-function runClaudeStreaming(fullPrompt: string, cwd: string): Promise<string> {
+function runClaudeStreaming(
+  fullPrompt: string,
+  cwd: string,
+  opts?: Pick<StreamOpts, "writeStdout">,
+  onChunk?: (chunk: string) => void
+): Promise<string> {
   const exe = resolveClaudeExe();
   if (!exe) {
     return Promise.reject(
@@ -207,6 +234,35 @@ function runClaudeStreaming(fullPrompt: string, cwd: string): Promise<string> {
   }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    const writeStdout = opts?.writeStdout ?? true;
+    let settled = false;
+
+    const finishReject = (message: string) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+    };
+
+    const finishResolve = () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks).toString("utf-8").trim());
+    };
+
+    const handleStdout = (chunk: Buffer) => {
+      chunks.push(chunk);
+      const text = chunk.toString("utf-8");
+      onChunk?.(text);
+      if (writeStdout) {
+        process.stdout.write(chunk);
+      }
+    };
+
+    const handleStderr = (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+      process.stderr.write(chunk);
+    };
 
     if (process.platform === "win32") {
       const tempPath = join(tmpdir(), "planforge-claude-" + randomBytes(8).toString("hex") + ".txt");
@@ -218,26 +274,31 @@ function runClaudeStreaming(fullPrompt: string, cwd: string): Promise<string> {
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
       });
+      const timeout = setTimeout(() => {
+        child.kill();
+        finishReject("Claude streaming timed out after 120s");
+      }, CLAUDE_ONE_TURN_TIMEOUT_MS);
       child.on("close", (code) => {
+        clearTimeout(timeout);
         try {
           unlinkSync(tempPath);
         } catch {
           // ignore
         }
+        if (settled) return;
         if (code !== 0) {
-          reject(new Error("Claude exited with code " + code));
+          const stderr = Buffer.concat(stderrChunks).toString("utf-8").trim();
+          finishReject(stderr || "Claude exited with code " + code);
           return;
         }
-        resolve(Buffer.concat(chunks).toString("utf-8").trim());
+        finishResolve();
       });
-      child.stdout?.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-        process.stdout.write(chunk);
+      child.stdout?.on("data", handleStdout);
+      child.stderr?.on("data", handleStderr);
+      child.on("error", (err) => {
+        clearTimeout(timeout);
+        finishReject(err.message);
       });
-      child.stderr?.on("data", (chunk: Buffer) => {
-        process.stderr.write(chunk);
-      });
-      child.on("error", (err) => reject(err));
       return;
     }
 
@@ -246,23 +307,145 @@ function runClaudeStreaming(fullPrompt: string, cwd: string): Promise<string> {
       stdio: ["pipe", "pipe", "pipe"],
     });
     child.stdin?.write(fullPrompt, "utf-8", (err) => {
-      if (err) reject(err);
-      else child.stdin?.end();
-    });
-    child.stdout?.on("data", (chunk: Buffer) => {
-      chunks.push(chunk);
-      process.stdout.write(chunk);
-    });
-    child.stderr?.on("data", (chunk: Buffer) => {
-      process.stderr.write(chunk);
-    });
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error("Claude exited with code " + code));
+      if (err) {
+        finishReject(err.message);
         return;
       }
-      resolve(Buffer.concat(chunks).toString("utf-8").trim());
+      child.stdin?.end();
     });
-    child.on("error", (err) => reject(err));
+    const timeout = setTimeout(() => {
+      child.kill();
+      finishReject("Claude streaming timed out after 120s");
+    }, CLAUDE_ONE_TURN_TIMEOUT_MS);
+    child.stdout?.on("data", handleStdout);
+    child.stderr?.on("data", handleStderr);
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (settled) return;
+      if (code !== 0) {
+        const stderr = Buffer.concat(stderrChunks).toString("utf-8").trim();
+        finishReject(stderr || "Claude exited with code " + code);
+        return;
+      }
+      finishResolve();
+    });
+    child.on("error", (err) => {
+      clearTimeout(timeout);
+      finishReject(err.message);
+    });
+  });
+}
+
+function runClaudeOneTurnStreaming(
+  systemPrompt: string,
+  userMessage: string,
+  opts?: CompleteOneTurnOpts,
+  onChunk?: (chunk: string) => void
+): Promise<string> {
+  const cwd = opts?.cwd ?? process.cwd();
+  const exe = resolveClaudeExe();
+  if (!exe) {
+    return Promise.reject(
+      new Error(
+        "claude not found in PATH or common locations (e.g. npm global bin). Install: npm install -g @anthropic-ai/claude-code"
+      )
+    );
+  }
+
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    const stderrChunks: Buffer[] = [];
+    let settled = false;
+
+    const finishReject = (message: string) => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(message));
+    };
+
+    const finishResolve = () => {
+      if (settled) return;
+      settled = true;
+      resolve(Buffer.concat(chunks).toString("utf-8").trim());
+    };
+
+    const handleStdout = (chunk: Buffer) => {
+      chunks.push(chunk);
+      onChunk?.(chunk.toString("utf-8"));
+    };
+
+    const handleStderr = (chunk: Buffer) => {
+      stderrChunks.push(chunk);
+      process.stderr.write(chunk);
+    };
+
+    if (process.platform === "win32") {
+      const fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser: " + userMessage.trim();
+      const tempPath = join(tmpdir(), "planforge-claude-" + randomBytes(8).toString("hex") + ".txt");
+      writeFileSync(tempPath, fullPrompt, "utf-8");
+      const escapedPath = tempPath.replace(/'/g, "''");
+      const escapedExe = exe.replace(/'/g, "''");
+      const modelArg = opts?.model ? ` --model '${opts.model.replace(/'/g, "''")}'` : "";
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | & '${escapedExe}'${modelArg}`;
+      const child = spawn("powershell", ["-NoProfile", "-Command", script], {
+        cwd,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      const timeout = setTimeout(() => {
+        child.kill();
+        finishReject("Claude streaming timed out after 120s");
+      }, CLAUDE_ONE_TURN_TIMEOUT_MS);
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        try {
+          unlinkSync(tempPath);
+        } catch {
+          // ignore
+        }
+        if (settled) return;
+        if (code !== 0) {
+          const stderr = Buffer.concat(stderrChunks).toString("utf-8").trim();
+          finishReject(stderr || "Claude exited with code " + code);
+          return;
+        }
+        finishResolve();
+      });
+      child.stdout?.on("data", handleStdout);
+      child.stderr?.on("data", handleStderr);
+      child.on("error", (err) => {
+        clearTimeout(timeout);
+        finishReject(err.message);
+      });
+      return;
+    }
+
+    const args: string[] = ["--system-prompt", systemPrompt.trim(), "-p", userMessage.trim()];
+    if (opts?.model) {
+      args.unshift("--model", opts.model);
+    }
+    const child = spawn(exe, args, {
+      cwd,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    const timeout = setTimeout(() => {
+      child.kill();
+      finishReject("Claude streaming timed out after 120s");
+    }, CLAUDE_ONE_TURN_TIMEOUT_MS);
+    child.stdout?.on("data", handleStdout);
+    child.stderr?.on("data", handleStderr);
+    child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (settled) return;
+      if (code !== 0) {
+        const stderr = Buffer.concat(stderrChunks).toString("utf-8").trim();
+        finishReject(stderr || "Claude exited with code " + code);
+        return;
+      }
+      finishResolve();
+    });
+    child.on("error", (err) => {
+      clearTimeout(timeout);
+      finishReject(err.message);
+    });
   });
 }

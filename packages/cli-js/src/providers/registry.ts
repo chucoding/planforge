@@ -45,6 +45,16 @@ export interface ImplementerRunner {
   runImplement(prompt: string, opts: ImplementOpts): Promise<string>;
 }
 
+export interface OneTurnRunner {
+  completeOneTurn(systemPrompt: string, userMessage: string, opts?: { cwd?: string; model?: string }): Promise<string>;
+  streamOneTurn(
+    systemPrompt: string,
+    userMessage: string,
+    onChunk: (chunk: string) => void,
+    opts?: { cwd?: string; model?: string }
+  ): Promise<string>;
+}
+
 const claudePlanner: PlannerRunner = {
   check: () => claude.checkClaude(),
   runPlan: (goal, opts) => claude.runPlan(goal, opts),
@@ -82,6 +92,23 @@ export function getImplementerRunner(provider: string): ImplementerRunner | null
       return claudeImplementer;
     case "codex":
       return codexImplementer;
+    default:
+      return null;
+  }
+}
+
+export function getOneTurnRunner(provider: string): OneTurnRunner | null {
+  switch (provider) {
+    case "claude":
+      return {
+        completeOneTurn: claude.completeOneTurn,
+        streamOneTurn: claude.streamOneTurn,
+      };
+    case "codex":
+      return {
+        completeOneTurn: codex.completeOneTurn,
+        streamOneTurn: codex.streamOneTurn,
+      };
     default:
       return null;
   }
