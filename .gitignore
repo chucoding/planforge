@@ -17,8 +17,8 @@ __pycache__
 
 # cursor / planforge
 planforge.json
-.planforge/plans
-.planforge/contexts    
+.cursor/plans
+.cursor/contexts
 .cursor/rules/code-comments.mdc
 .cursor/rules/notion.mdc
 .cursor/rules/pr-writing.mdc
