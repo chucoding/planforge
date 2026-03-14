@@ -328,11 +328,11 @@ async function runStreamingDoctorTc(
 }
 
 function loadWorkflowMdc(projectRoot: string): string {
-  const installed = resolve(projectRoot, ".cursor", "rules", "workflow.mdc");
+  const installed = resolve(projectRoot, ".cursor", "rules", "planforge-workflow.mdc");
   if (fs.existsSync(installed)) {
     return fs.readFileSync(installed, "utf-8");
   }
-  const templatesPath = resolve(getTemplatesRoot(), "cursor", "rules", "workflow.mdc");
+  const templatesPath = resolve(getTemplatesRoot(), "cursor", "rules", "planforge-workflow.mdc");
   if (fs.existsSync(templatesPath)) {
     return fs.readFileSync(templatesPath, "utf-8");
   }

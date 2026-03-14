@@ -286,10 +286,10 @@ def run_doctor(args: list[str]) -> None:
 
 
 def _load_workflow_mdc(project_root: str) -> str:
-    installed = Path(project_root) / ".cursor" / "rules" / "workflow.mdc"
+    installed = Path(project_root) / ".cursor" / "rules" / "planforge-workflow.mdc"
     if installed.exists():
         return installed.read_text(encoding="utf-8")
-    templates_path = Path(get_templates_root()) / "cursor" / "rules" / "workflow.mdc"
+    templates_path = Path(get_templates_root()) / "cursor" / "rules" / "planforge-workflow.mdc"
     if templates_path.exists():
         return templates_path.read_text(encoding="utf-8")
     raise FileNotFoundError(
