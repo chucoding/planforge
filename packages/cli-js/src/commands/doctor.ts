@@ -66,13 +66,12 @@ export async function runDoctorModeSelect(): Promise<void> {
   }
   const chosen = await selectFromList(
     [
-      { label: "static  ?? Check environment and providers", value: DOCTOR_MODE_STATIC },
-      { label: "ai  ?? Run workflow tests with AI", value: DOCTOR_MODE_AI },
-      { label: "Quit", value: "quit" as const },
+      { label: "static – Check environment and providers", value: DOCTOR_MODE_STATIC },
+      { label: "ai – Run workflow tests with AI", value: DOCTOR_MODE_AI },
     ],
     "Mode  [Up/Down]  Enter to confirm"
   );
-  if (chosen === null || chosen === "quit") process.exit(0);
+  if (chosen === null) process.exit(0);
   if (chosen === DOCTOR_MODE_STATIC) {
     await runDoctor([]);
     return;
@@ -525,13 +524,13 @@ export async function runDoctorAi(args: string[]): Promise<void> {
           ],
           "Mode  [Up/Down]  Enter to confirm"
         );
-        if (firstRole === null) continue;
+        if (firstRole === null) process.exit(exitCode);
         const secondRole = firstRole === "planner" ? "implementer" : "planner";
 
         const firstSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, firstRole);
-        if (firstSel === null) continue;
+        if (firstSel === null) process.exit(exitCode);
         const secondSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, secondRole);
-        if (secondSel === null) continue;
+        if (secondSel === null) process.exit(exitCode);
 
         selectedPlanner =
           firstRole === "planner"
@@ -549,7 +548,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
           })),
           "Select AI for workflow test  [Up/Down]  Enter to confirm"
         );
-        if (selected === null) continue;
+        if (selected === null) process.exit(exitCode);
         selectedPlanner = selectedImplementer = selected;
       }
     }
