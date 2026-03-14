@@ -2,9 +2,12 @@
  * Claude provider - planning (e.g. /p)
  */
 
+import { randomBytes } from "crypto";
 import { spawn, spawnSync } from "child_process";
+import { writeFileSync, unlinkSync } from "fs";
 import { readFile } from "fs/promises";
-import { resolve } from "path";
+import { tmpdir } from "os";
+import { join, resolve } from "path";
 import { hasCommand, resolveCommandPathWithNpmFallback } from "../utils/shell.js";
 import { getPromptsDir } from "../utils/paths.js";
 import { loadPrompt } from "../utils/prompt.js";
@@ -42,6 +45,7 @@ export interface CompleteOneTurnOpts {
 
 /**
  * Single-turn completion for doctor ai workflow tests. Sends systemPrompt + userMessage and returns response text.
+ * On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd directly (CVE-2024-27980).
  */
 export async function completeOneTurn(
   systemPrompt: string,
@@ -55,11 +59,41 @@ export async function completeOneTurn(
       "claude not found in PATH or common locations (e.g. npm global bin). Install: npm install -g @anthropic-ai/claude-code"
     );
   }
-  const args: string[] = ["--system-prompt", systemPrompt.trim(), "-p", userMessage.trim()];
-  if (opts?.model) {
-    args.unshift("--model", opts.model);
-  }
+  const fullPrompt = systemPrompt.trim() + "\n\n---\n\nUser: " + userMessage.trim();
+
   try {
+    if (process.platform === "win32") {
+      const tempPath = join(tmpdir(), "planforge-claude-" + randomBytes(8).toString("hex") + ".txt");
+      try {
+        writeFileSync(tempPath, fullPrompt, "utf-8");
+        const escapedPath = tempPath.replace(/'/g, "''");
+        const escapedExe = exe.replace(/'/g, "''");
+        const modelArg = opts?.model ? ` --model '${opts.model.replace(/'/g, "''")}'` : "";
+        const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | & '${escapedExe}'${modelArg}`;
+        const result = spawnSync("powershell", ["-NoProfile", "-Command", script], {
+          encoding: "utf-8",
+          cwd,
+          maxBuffer: 512 * 1024,
+        });
+        if (result.status !== 0) {
+          const msg = result.stderr ?? result.stdout ?? result.error?.message ?? "Claude exited non-zero";
+          throw new Error(String(msg));
+        }
+        const out = (result.stdout ?? "").trim();
+        return typeof out === "string" ? out : String(out);
+      } finally {
+        try {
+          unlinkSync(tempPath);
+        } catch {
+          // ignore cleanup failure
+        }
+      }
+    }
+
+    const args: string[] = ["--system-prompt", systemPrompt.trim(), "-p", userMessage.trim()];
+    if (opts?.model) {
+      args.unshift("--model", opts.model);
+    }
     const result = spawnSync(exe, args, {
       encoding: "utf-8",
       cwd,
@@ -160,6 +194,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
 /**
  * Run Claude with streaming: forward stdout/stderr to the current process so the user
  * sees logs in real time (e.g. in Cursor chat terminal). Returns collected stdout when done.
+ * On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd directly (CVE-2024-27980).
  */
 function runClaudeStreaming(fullPrompt: string, cwd: string): Promise<string> {
   const exe = resolveClaudeExe();
@@ -172,6 +207,40 @@ function runClaudeStreaming(fullPrompt: string, cwd: string): Promise<string> {
   }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
+
+    if (process.platform === "win32") {
+      const tempPath = join(tmpdir(), "planforge-claude-" + randomBytes(8).toString("hex") + ".txt");
+      writeFileSync(tempPath, fullPrompt, "utf-8");
+      const escapedPath = tempPath.replace(/'/g, "''");
+      const escapedExe = exe.replace(/'/g, "''");
+      const script = `Get-Content -Raw -LiteralPath '${escapedPath}' -Encoding UTF8 | & '${escapedExe}'`;
+      const child = spawn("powershell", ["-NoProfile", "-Command", script], {
+        cwd,
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      child.on("close", (code) => {
+        try {
+          unlinkSync(tempPath);
+        } catch {
+          // ignore
+        }
+        if (code !== 0) {
+          reject(new Error("Claude exited with code " + code));
+          return;
+        }
+        resolve(Buffer.concat(chunks).toString("utf-8").trim());
+      });
+      child.stdout?.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+        process.stdout.write(chunk);
+      });
+      child.stderr?.on("data", (chunk: Buffer) => {
+        process.stderr.write(chunk);
+      });
+      child.on("error", (err) => reject(err));
+      return;
+    }
+
     const child = spawn(exe, [], {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
