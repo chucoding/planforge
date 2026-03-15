@@ -12,7 +12,7 @@ import { parseFilesFromPlan } from "../utils/plan-files.js";
 import { getProjectContext } from "../utils/project-context.js";
 import { loadMergedContext } from "../utils/context.js";
 import { loadConfig } from "../config/load.js";
-import { resolveImplementerStreamTimeoutSec } from "../config/resolve-timeout.js";
+import { resolveImplementerStreamTimeoutSec } from "../config/timeout.js";
 import { getImplementerRunner } from "../providers/registry.js";
 
 const MAX_CODE_CONTEXT_CHARS = 12000;

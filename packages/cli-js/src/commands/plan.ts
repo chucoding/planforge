@@ -12,7 +12,7 @@ import { getProjectContext } from "../utils/project-context.js";
 import { loadMergedContext } from "../utils/context.js";
 import { fetchUrlsContext } from "../utils/url-fetch.js";
 import { loadConfig } from "../config/load.js";
-import { resolvePlannerStreamTimeoutSec } from "../config/resolve-timeout.js";
+import { resolvePlannerStreamTimeoutSec } from "../config/timeout.js";
 import { getPlannerRunner } from "../providers/registry.js";
 
 /** Characters disallowed in filenames on Windows / macOS / Linux */
