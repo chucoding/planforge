@@ -5,10 +5,8 @@
 import { existsSync } from "fs";
 import { resolve, dirname } from "path";
 import { fileURLToPath } from "url";
-import { createRequire } from "module";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const require = createRequire(import.meta.url);
 
 /**
  * Find project root by walking up from cwd until we find planforge.json or .cursor/plans or .cursor/contexts.
@@ -71,26 +69,21 @@ export function getTemplatesRoot(): string {
 }
 
 /**
- * Resolve @planforge/core package root. In monorepo uses the dependency; when published, uses bundled copy next to dist/.
+ * Resolve core root (prompts, models.json). Always uses the bundled copy at package root; no @planforge/core dependency.
  */
 function getCoreRoot(): string {
-  try {
-    const corePackageJson = require.resolve("@planforge/core/package.json");
-    return dirname(corePackageJson);
-  } catch {
-    return resolve(__dirname, "..", "..", "core");
-  }
+  return resolve(__dirname, "..", "..", "core");
 }
 
 /**
- * Resolve prompts directory from @planforge/core package (for planner/implementer system prompts).
+ * Resolve prompts directory (planner/implementer system prompts). Uses bundled core from build.
  */
 export function getPromptsDir(): string {
   return resolve(getCoreRoot(), "prompts");
 }
 
 /**
- * Resolve models.json path from @planforge/core package (for planforge model command).
+ * Resolve models.json path (planforge model command). Uses bundled core from build.
  */
 export function getModelsJsonPath(): string {
   return resolve(getCoreRoot(), "models.json");

@@ -32,7 +32,7 @@ export function loadModelsCatalog(): ModelsCatalog {
   const filePath = existsSync(path) ? path : existsSync(fallback) ? fallback : null;
   if (!filePath) {
     throw new Error(
-      `models.json not found. Tried: ${path} and ${fallback}. Check @planforge/core package or run from repo root.`
+      `models.json not found. Tried: ${path} and ${fallback}. Run pnpm run build in cli-js or reinstall planforge.`
     );
   }
   return fs.readJsonSync(filePath) as ModelsCatalog;
