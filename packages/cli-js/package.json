@@ -1,6 +1,6 @@
 {
   "name": "planforge",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "description": "PlanForge CLI - Bring your own AI to Cursor",
   "keywords": ["cursor", "claude", "codex", "ai", "cli", "planning", "planforge"],
@@ -14,13 +14,13 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist", "README.md"],
+  "files": ["dist", "templates", "README.md"],
   "bin": {
     "planforge": "dist/index.js"
   },
   "scripts": {
     "check:templates": "node scripts/check-templates.js",
-    "build": "pnpm run check:templates && tsc",
+    "build": "pnpm run check:templates && tsc && node scripts/copy-templates.js",
     "dev": "tsc --watch",
     "planforge": "node dist/index.js",
     "install:global": "pnpm run build && npm install -g .",

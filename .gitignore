@@ -4,6 +4,7 @@ node_modules
 .npm-cache
 dist
 build
+packages/cli-js/templates
 npm-debug.log
 
 # python
