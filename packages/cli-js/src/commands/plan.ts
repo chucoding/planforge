@@ -14,6 +14,7 @@ import { fetchUrlsContext } from "../utils/url-fetch.js";
 import { loadConfig } from "../config/load.js";
 import { resolvePlannerStreamTimeoutSec } from "../config/timeout.js";
 import { getPlannerRunner } from "../providers/registry.js";
+import { createSpinner } from "../utils/spinner.js";
 
 /** Characters disallowed in filenames on Windows / macOS / Linux */
 const FILENAME_UNSAFE = /[\\/:*?"<>|]/g;
@@ -133,6 +134,10 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
   );
 
   const streamTimeoutSec = resolvePlannerStreamTimeoutSec(config.planner);
+  const spinner = createSpinner({ prefix: "Loading... " });
+  if (process.stdout.isTTY) {
+    spinner.start();
+  }
   try {
     const planBody = await runner.runPlan(goal, {
       cwd: projectRoot,
@@ -141,6 +146,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       projectContext,
       projectContextSource,
       streamTimeoutMs: streamTimeoutSec === 0 ? 0 : streamTimeoutSec * 1000,
+      onFirstChunk: process.stdout.isTTY ? () => spinner.stop() : undefined,
     });
     const bodyToWrite = stripFilenameSlugLine(planBody);
     let slug: string;
@@ -199,5 +205,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
   } catch (err) {
     console.error("Plan generation failed:", (err as Error).message);
     process.exit(1);
+  } finally {
+    spinner.stop();
   }
 }

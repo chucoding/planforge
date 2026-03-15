@@ -2,6 +2,7 @@
 
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -128,6 +129,8 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
         "projectContextSource": project_context_source,
         "streamTimeoutSec": stream_timeout_sec,
     }
+    if sys.stdout.isatty():
+        print("Loading...", flush=True)
     try:
         plan_body = run(goal, run_opts)
     except Exception as e:

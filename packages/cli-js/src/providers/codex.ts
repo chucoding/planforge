@@ -308,9 +308,19 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
 
   try {
-    return await runCodexExecStreaming(fullPrompt, cwd, true, {
+    let onFirstChunkFired = false;
+    const streamOpts: { timeoutMs?: number; onChunk?: (chunk: string) => void } = {
       timeoutMs: opts?.streamTimeoutMs,
-    });
+    };
+    if (opts?.onFirstChunk) {
+      streamOpts.onChunk = (chunk: string) => {
+        if (!onFirstChunkFired && chunk.length > 0) {
+          onFirstChunkFired = true;
+          opts.onFirstChunk!();
+        }
+      };
+    }
+    return await runCodexExecStreaming(fullPrompt, cwd, true, streamOpts);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr

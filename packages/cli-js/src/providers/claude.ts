@@ -164,7 +164,16 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
 
   try {
-    return await runClaudeStreaming(fullPrompt, cwd, { streamTimeoutMs: opts?.streamTimeoutMs });
+    let onFirstChunkFired = false;
+    const onChunk = opts?.onFirstChunk
+      ? (chunk: string) => {
+          if (!onFirstChunkFired && chunk.length > 0) {
+            onFirstChunkFired = true;
+            opts!.onFirstChunk!();
+          }
+        }
+      : undefined;
+    return await runClaudeStreaming(fullPrompt, cwd, { streamTimeoutMs: opts?.streamTimeoutMs }, onChunk);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
