@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from planforge.utils.paths import get_project_root
-from planforge.utils.config import load_config
+from planforge.utils.config import load_config, resolve_implementer_stream_timeout_sec
 from planforge.utils.context import load_merged_context
 from planforge.utils.active_plan import get_active_plan_path
 from planforge.utils.plan_files import parse_files_from_plan
@@ -157,6 +157,7 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
     recent_commits_per_file = (
         _build_recent_commits_for_files(project_root, files_to_change) if files_to_change else None
     )
+    stream_timeout_sec = resolve_implementer_stream_timeout_sec(config["implementer"])
     run_opts = {
         "cwd": project_root,
         "context": context,
@@ -166,6 +167,7 @@ def run_implement(args: list[str], opts: dict | None = None) -> None:
         "projectContext": project_context,
         "projectContextSource": project_context_source,
         "recentCommitsPerFile": recent_commits_per_file,
+        "streamTimeoutSec": stream_timeout_sec,
     }
     try:
         result = run(prompt, run_opts)
