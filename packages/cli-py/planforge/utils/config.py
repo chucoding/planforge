@@ -61,6 +61,27 @@ def get_default_doctor_ai_config(has_claude: bool, has_codex: bool) -> dict:
         ) from e
 
 
+# Default seconds by effort when streamTimeoutSec is not set (planner and implementer).
+_PLANNER_EFFORT_DEFAULT_SEC = {"high": 300, "medium": 180, "low": 120}
+_IMPLEMENTER_DEFAULT_SEC = 300
+
+
+def resolve_planner_stream_timeout_sec(planner: dict) -> int:
+    """Resolve planner stream timeout in seconds. 0 = no timeout."""
+    if planner.get("streamTimeoutSec") is not None:
+        return max(0, int(planner["streamTimeoutSec"]))
+    effort = (planner.get("effort") or "").lower()
+    return _PLANNER_EFFORT_DEFAULT_SEC.get(effort, 120)
+
+
+def resolve_implementer_stream_timeout_sec(implementer: dict) -> int:
+    """Resolve implementer stream timeout in seconds. 0 = no timeout."""
+    if implementer.get("streamTimeoutSec") is not None:
+        return max(0, int(implementer["streamTimeoutSec"]))
+    effort = (implementer.get("effort") or "").lower()
+    return _PLANNER_EFFORT_DEFAULT_SEC.get(effort, _IMPLEMENTER_DEFAULT_SEC)
+
+
 def load_config(project_root: str | None = None) -> dict:
     """Load planforge.json for runtime commands (plan, implement, doctor). No template fallback. Raises if missing."""
     cwd = project_root or str(Path.cwd())

@@ -172,12 +172,28 @@ function runCodexExecStreaming(
   const exe = resolveCodexExe();
   if (!exe) return Promise.reject(new Error(CODEX_NOT_FOUND_MSG));
 
+  const timeoutMs = streamOpts?.timeoutMs;
+  const useTimeout = timeoutMs === undefined ? true : timeoutMs !== 0;
+  const effectiveMs = timeoutMs === undefined ? CODEX_ONE_TURN_TIMEOUT_MS : timeoutMs === 0 ? 0 : timeoutMs;
+
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     const opts = { cwd };
     const writeStdout = streamOpts?.writeStdout ?? true;
     let settled = false;
+
+    const scheduleTimeout = (child: ReturnType<typeof spawn>) => {
+      if (!useTimeout || effectiveMs === 0) return () => {};
+      const t = setTimeout(() => {
+        child.kill();
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Codex streaming timed out after ${Math.floor(effectiveMs / 1000)}s`));
+        }
+      }, effectiveMs);
+      return () => clearTimeout(t);
+    };
 
     const finish = (code: number | null) => {
       if (settled) return;
@@ -222,15 +238,9 @@ function runCodexExecStreaming(
         ...opts,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      const timeout = setTimeout(() => {
-        child.kill();
-        if (!settled) {
-          settled = true;
-          reject(new Error(`Codex streaming timed out after ${Math.floor((streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS) / 1000)}s`));
-        }
-      }, streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS);
+      const clearTimeoutRef = scheduleTimeout(child);
       child.on("close", (code) => {
-        clearTimeout(timeout);
+        clearTimeoutRef();
         try {
           unlinkSync(tempPath);
         } catch {
@@ -241,7 +251,7 @@ function runCodexExecStreaming(
       child.stdout?.on("data", handleStdout);
       child.stderr?.on("data", handleStderr);
       child.on("error", (err) => {
-        clearTimeout(timeout);
+        clearTimeoutRef();
         if (!settled) {
           settled = true;
           reject(err);
@@ -254,21 +264,15 @@ function runCodexExecStreaming(
       ...opts,
       stdio: ["ignore", "pipe", "pipe"],
     });
-    const timeout = setTimeout(() => {
-      child.kill();
-      if (!settled) {
-        settled = true;
-        reject(new Error(`Codex streaming timed out after ${Math.floor((streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS) / 1000)}s`));
-      }
-    }, streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS);
+    const clearTimeoutRef = scheduleTimeout(child);
     child.stdout?.on("data", handleStdout);
     child.stderr?.on("data", handleStderr);
     child.on("close", (code) => {
-      clearTimeout(timeout);
+      clearTimeoutRef();
       finish(code);
     });
     child.on("error", (err) => {
-      clearTimeout(timeout);
+      clearTimeoutRef();
       if (!settled) {
         settled = true;
         reject(err);
@@ -304,7 +308,9 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
 
   try {
-    return await runCodexExecStreaming(fullPrompt, cwd, true);
+    return await runCodexExecStreaming(fullPrompt, cwd, true, {
+      timeoutMs: opts?.streamTimeoutMs,
+    });
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
@@ -346,7 +352,9 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
   const fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
 
   try {
-    return await runCodexExecStreaming(fullPrompt, cwd);
+    return await runCodexExecStreaming(fullPrompt, cwd, false, {
+      timeoutMs: opts?.streamTimeoutMs,
+    });
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr

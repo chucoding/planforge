@@ -12,6 +12,7 @@ import { parseFilesFromPlan } from "../utils/plan-files.js";
 import { getProjectContext } from "../utils/project-context.js";
 import { loadMergedContext } from "../utils/context.js";
 import { loadConfig } from "../config/load.js";
+import { resolveImplementerStreamTimeoutSec } from "../config/resolve-timeout.js";
 import { getImplementerRunner } from "../providers/registry.js";
 
 const MAX_CODE_CONTEXT_CHARS = 12000;
@@ -179,6 +180,7 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
   const recentCommitsPerFile =
     filesToChange.length > 0 ? buildRecentCommitsForFiles(projectRoot, filesToChange) : undefined;
 
+  const streamTimeoutSec = resolveImplementerStreamTimeoutSec(config.implementer);
   try {
     const result = await runner.runImplement(prompt, {
       cwd: projectRoot,
@@ -189,6 +191,7 @@ export async function runImplement(args: string[], opts?: ImplementCliOpts): Pro
       projectContext,
       projectContextSource,
       recentCommitsPerFile,
+      streamTimeoutMs: streamTimeoutSec === 0 ? 0 : streamTimeoutSec * 1000,
     });
     const extracted = extractFilesFromOutput(result);
     const root = resolve(projectRoot);

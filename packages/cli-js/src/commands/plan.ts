@@ -12,6 +12,7 @@ import { getProjectContext } from "../utils/project-context.js";
 import { loadMergedContext } from "../utils/context.js";
 import { fetchUrlsContext } from "../utils/url-fetch.js";
 import { loadConfig } from "../config/load.js";
+import { resolvePlannerStreamTimeoutSec } from "../config/resolve-timeout.js";
 import { getPlannerRunner } from "../providers/registry.js";
 
 /** Characters disallowed in filenames on Windows / macOS / Linux */
@@ -131,6 +132,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
     config.planner.provider
   );
 
+  const streamTimeoutSec = resolvePlannerStreamTimeoutSec(config.planner);
   try {
     const planBody = await runner.runPlan(goal, {
       cwd: projectRoot,
@@ -138,6 +140,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       repoContext,
       projectContext,
       projectContextSource,
+      streamTimeoutMs: streamTimeoutSec === 0 ? 0 : streamTimeoutSec * 1000,
     });
     const bodyToWrite = stripFilenameSlugLine(planBody);
     let slug: string;
