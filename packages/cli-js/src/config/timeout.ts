@@ -7,7 +7,7 @@ import type { PlanForgeConfig } from "./types.js";
 
 /** Default seconds by planner effort when streamTimeoutSec is not set. */
 const PLANNER_EFFORT_DEFAULT_SEC: Record<string, number> = {
-  high: 300,
+  high: 360,
   medium: 180,
   low: 120,
 };

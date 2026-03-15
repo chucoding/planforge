@@ -7,7 +7,7 @@ from pathlib import Path
 from planforge.utils.paths import get_project_root, get_templates_root
 
 # Default seconds by effort when streamTimeoutSec is not set (planner and implementer).
-_PLANNER_EFFORT_DEFAULT_SEC = {"high": 300, "medium": 180, "low": 120}
+_PLANNER_EFFORT_DEFAULT_SEC = {"high": 360, "medium": 180, "low": 120}
 _IMPLEMENTER_DEFAULT_SEC = 300
 
 
