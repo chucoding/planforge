@@ -14,13 +14,13 @@
   "publishConfig": {
     "access": "public"
   },
-  "files": ["dist", "templates", "README.md"],
+  "files": ["dist", "templates", "core", "README.md"],
   "bin": {
     "planforge": "dist/index.js"
   },
   "scripts": {
     "check:templates": "node scripts/check-templates.js",
-    "build": "pnpm run check:templates && tsc && node scripts/copy-templates.js",
+    "build": "pnpm run check:templates && tsc && node scripts/copy-templates.js && node scripts/copy-core.js",
     "dev": "tsc --watch",
     "planforge": "node dist/index.js",
     "install:global": "pnpm run build && npm install -g .",

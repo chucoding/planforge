@@ -71,19 +71,27 @@ export function getTemplatesRoot(): string {
 }
 
 /**
+ * Resolve @planforge/core package root. In monorepo uses the dependency; when published, uses bundled copy next to dist/.
+ */
+function getCoreRoot(): string {
+  try {
+    const corePackageJson = require.resolve("@planforge/core/package.json");
+    return dirname(corePackageJson);
+  } catch {
+    return resolve(__dirname, "..", "..", "core");
+  }
+}
+
+/**
  * Resolve prompts directory from @planforge/core package (for planner/implementer system prompts).
  */
 export function getPromptsDir(): string {
-  const corePackageJson = require.resolve("@planforge/core/package.json");
-  const coreRoot = dirname(corePackageJson);
-  return resolve(coreRoot, "prompts");
+  return resolve(getCoreRoot(), "prompts");
 }
 
 /**
  * Resolve models.json path from @planforge/core package (for planforge model command).
  */
 export function getModelsJsonPath(): string {
-  const corePackageJson = require.resolve("@planforge/core/package.json");
-  const coreRoot = dirname(corePackageJson);
-  return resolve(coreRoot, "models.json");
+  return resolve(getCoreRoot(), "models.json");
 }
