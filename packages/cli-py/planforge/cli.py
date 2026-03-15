@@ -11,7 +11,7 @@ from planforge.commands.model import run_model
 
 
 @click.group()
-@click.version_option(version="0.1.0")
+@click.version_option(version="0.1.6")
 def main() -> None:
     """Bring your own AI to Cursor. Use Claude or Codex inside Cursor Free."""
 
