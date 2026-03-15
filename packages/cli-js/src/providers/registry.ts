@@ -17,6 +17,8 @@ export interface PlanOpts {
   projectContextSource?: string;
   /** Stream timeout in ms. 0 = no timeout. */
   streamTimeoutMs?: number;
+  /** Called once when the first output chunk is received (e.g. to stop a loading spinner). */
+  onFirstChunk?: () => void;
 }
 
 export interface ImplementOpts {

@@ -3,6 +3,7 @@
  */
 
 import fs from "fs-extra";
+import readline from "readline";
 import { relative, resolve } from "path";
 import { spawnSync } from "child_process";
 import { romanize } from "@daun_jung/korean-romanizer";
@@ -133,6 +134,32 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
   );
 
   const streamTimeoutSec = resolvePlannerStreamTimeoutSec(config.planner);
+  const dim = "\x1b[2m";
+  const reset = "\x1b[0m";
+  const spinnerFrames = ["|", "/", "-", "\\"];
+  let spinnerInterval: ReturnType<typeof setInterval> | null = null;
+  const startSpinner = () => {
+    let frameIdx = 0;
+    spinnerInterval = setInterval(() => {
+      readline.clearLine(process.stdout, 0);
+      readline.cursorTo(process.stdout, 0);
+      process.stdout.write(`${dim}Loading...${reset} ${spinnerFrames[frameIdx % spinnerFrames.length]}`);
+      frameIdx++;
+    }, 80);
+  };
+  const stopSpinner = () => {
+    if (spinnerInterval !== null) {
+      clearInterval(spinnerInterval);
+      spinnerInterval = null;
+    }
+    if (process.stdout.isTTY) {
+      readline.clearLine(process.stdout, 0);
+      readline.cursorTo(process.stdout, 0);
+    }
+  };
+  if (process.stdout.isTTY) {
+    startSpinner();
+  }
   try {
     const planBody = await runner.runPlan(goal, {
       cwd: projectRoot,
@@ -141,6 +168,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
       projectContext,
       projectContextSource,
       streamTimeoutMs: streamTimeoutSec === 0 ? 0 : streamTimeoutSec * 1000,
+      onFirstChunk: process.stdout.isTTY ? stopSpinner : undefined,
     });
     const bodyToWrite = stripFilenameSlugLine(planBody);
     let slug: string;
@@ -199,5 +227,7 @@ export async function runPlan(args: string[], opts?: PlanCliOpts): Promise<void>
   } catch (err) {
     console.error("Plan generation failed:", (err as Error).message);
     process.exit(1);
+  } finally {
+    stopSpinner();
   }
 }
