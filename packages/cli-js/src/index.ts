@@ -17,7 +17,7 @@ const program = new Command();
 program
   .name("planforge")
   .description("Bring your own AI to Cursor. Use Claude or Codex inside Cursor Free.")
-  .version("0.1.6");
+  .version("0.1.7");
 
 program
   .command("init")
