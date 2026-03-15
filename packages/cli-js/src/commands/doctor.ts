@@ -4,6 +4,7 @@
 
 import fs from "fs-extra";
 import readline from "readline";
+import { createSpinner } from "../utils/spinner.js";
 import { resolve } from "path";
 import {
   getProjectRoot,
@@ -276,23 +277,7 @@ async function runStreamingDoctorTc(
   const reset = "\x1b[0m";
   const passColor = "\x1b[92m";
   const failColor = "\x1b[31m";
-  const spinnerFrames = ["|", "/", "-", "\\"];
-  let spinnerInterval: ReturnType<typeof setInterval> | null = null;
-  const startSpinner = () => {
-    let frameIdx = 0;
-    spinnerInterval = setInterval(() => {
-      readline.clearLine(process.stdout, 0);
-      readline.cursorTo(process.stdout, 0);
-      process.stdout.write(`    ${dim}response:${reset} ${spinnerFrames[frameIdx % spinnerFrames.length]}`);
-      frameIdx++;
-    }, 80);
-  };
-  const stopSpinner = () => {
-    if (spinnerInterval !== null) {
-      clearInterval(spinnerInterval);
-      spinnerInterval = null;
-    }
-  };
+  const spinner = createSpinner({ prefix: "    response: " });
   const render = (suffix = "") => {
     const normalized = response.replace(/\s+/g, " ").trim();
     readline.clearLine(process.stdout, 0);
@@ -304,12 +289,12 @@ async function runStreamingDoctorTc(
   process.stdout.write(`    ${dim}response:${reset} `);
 
   try {
-    startSpinner();
+    spinner.start();
     const finalResponse = await runner.streamOneTurn(
       systemPrompt,
       userMessage,
       (chunk) => {
-        if (response.length === 0 && chunk.length > 0) stopSpinner();
+        if (response.length === 0 && chunk.length > 0) spinner.stop();
         response += chunk;
         if (!passShown && expectedKeywords.some((keyword) => response.includes(keyword))) {
           passShown = true;
@@ -322,14 +307,14 @@ async function runStreamingDoctorTc(
       },
       { cwd, model }
     );
-    stopSpinner();
+    spinner.stop();
     response = finalResponse;
     const passed = expectedKeywords.some((keyword) => response.includes(keyword));
     render(passed ? `  ${passColor}\u2713 PASS${reset}` : `  ${failColor}\u2717 FAIL${reset}`);
     process.stdout.write("\n");
     return { passed, response };
   } catch (err) {
-    stopSpinner();
+    spinner.stop();
     render(`  ${failColor}\u2717 FAIL${reset}`);
     process.stdout.write("\n");
     return {
