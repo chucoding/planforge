@@ -64,9 +64,10 @@ export function getDatedPlansDir(projectRoot: string, date: Date = new Date()): 
 
 /**
  * Resolve path relative to CLI package (for templates).
+ * From dist/utils/paths.js: two levels up = package root; templates live next to dist/ when published.
  */
 export function getTemplatesRoot(): string {
-  return resolve(__dirname, "..", "..", "..", "..", "templates");
+  return resolve(__dirname, "..", "..", "templates");
 }
 
 /**
