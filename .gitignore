@@ -5,6 +5,7 @@ node_modules
 dist
 build
 packages/cli-js/templates
+packages/cli-js/core
 npm-debug.log
 
 # python
