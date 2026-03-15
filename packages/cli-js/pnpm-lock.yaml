@@ -11,9 +11,6 @@ importers:
       '@daun_jung/korean-romanizer':
         specifier: ^1.0.1
         version: 1.0.1
-      '@planforge/core':
-        specifier: file:../core
-        version: file:../core
       commander:
         specifier: ^12.0.0
         version: 12.1.0
@@ -36,9 +33,6 @@ packages:
   '@daun_jung/korean-romanizer@1.0.1':
     resolution: {integrity: sha512-V5eY5iB3kUt6u9uYcjilra9vkJ8cIdJpDYSNeaX9dle1qPPYqis+XrOn+Zf/+FsbxOLAL9WqMmkJEDwNOd+0OQ==}
     engines: {node: '>=14.0.0'}
-
-  '@planforge/core@file:../core':
-    resolution: {directory: ../core, type: directory}
 
   '@types/fs-extra@11.0.4':
     resolution: {integrity: sha512-yTbItCNreRooED33qjunPthRcSjERP1r4MqCZc7wv0u2sUkzTFp45tgUfS5+r7FrZPdmCCNflLhVSP/o+SemsQ==}
@@ -78,8 +72,6 @@ packages:
 snapshots:
 
   '@daun_jung/korean-romanizer@1.0.1': {}
-
-  '@planforge/core@file:../core': {}
 
   '@types/fs-extra@11.0.4':
     dependencies:
