@@ -103,8 +103,9 @@ function looksLikePlan(stdout: string): boolean {
 }
 
 /**
- * Run "codex exec" with the given prompt. On Windows uses temp file + PowerShell to avoid
- * EINVAL from spawning .cmd directly (CVE-2024-27980) and to avoid shell splitting long args.
+ * Run "codex exec" with the given prompt. On all platforms the prompt is passed via stdin
+ * (codex exec -) to avoid argv length limits and CLI parsing of special characters (e.g. ---).
+ * On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd (CVE-2024-27980).
  * When allowPlanFallback is true, non-zero exit is still treated as success if stdout looks like a plan
  * (used only for runPlan; runImplement must not treat non-zero as success).
  */
@@ -144,7 +145,7 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
     }
   }
 
-  const result = spawnSync(exe, ["exec", fullPrompt], { ...opts, shell: false });
+  const result = spawnSync(exe, ["exec", "-"], { ...opts, input: fullPrompt, shell: false });
   const out = (result.stdout ?? "").trim();
   if (result.status !== 0) {
     if (allowPlanFallback && result.status === 1 && looksLikePlan(out)) {
@@ -260,11 +261,13 @@ function runCodexExecStreaming(
       return;
     }
 
-    const child = spawn(exe, ["exec", fullPrompt], {
+    const child = spawn(exe, ["exec", "-"], {
       ...opts,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
     const clearTimeoutRef = scheduleTimeout(child);
+    child.stdin.write(fullPrompt, "utf-8");
+    child.stdin.end();
     child.stdout?.on("data", handleStdout);
     child.stderr?.on("data", handleStderr);
     child.on("close", (code) => {

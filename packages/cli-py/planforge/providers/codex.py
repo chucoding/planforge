@@ -117,8 +117,9 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
             except OSError:
                 pass
     result = subprocess.run(
-        [exe, "exec", full_prompt],
+        [exe, "exec", "-"],
         cwd=cwd,
+        input=full_prompt,
         capture_output=True,
         text=True,
         timeout=300,
@@ -193,12 +194,15 @@ def _run_codex_exec_streaming(
             raise
     else:
         proc = subprocess.Popen(
-            [exe, "exec", full_prompt],
+            [exe, "exec", "-"],
             cwd=cwd,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+        proc.stdin.write(full_prompt)
+        proc.stdin.close()
         temp_path = None
 
     t_out = threading.Thread(target=read_stdout, args=(proc,))
