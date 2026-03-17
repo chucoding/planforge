@@ -201,8 +201,11 @@ def _run_codex_exec_streaming(
             stderr=subprocess.PIPE,
             text=True,
         )
-        proc.stdin.write(full_prompt)
-        proc.stdin.close()
+        try:
+            proc.stdin.write(full_prompt)
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass
         temp_path = None
 
     t_out = threading.Thread(target=read_stdout, args=(proc,))
