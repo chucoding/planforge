@@ -454,11 +454,7 @@ def run_doctor_ai(args: list[str]) -> None:
             f"Missing or invalid template: {prompts_path}. Run from repo root or ensure templates exist."
         ) from e
 
-    workflow_content = _load_workflow_mdc(project_root)
-    system_prompt = (
-        workflow_content
-        + "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything."
-    )
+     system_prompt = _load_workflow_mdc(project_root)
 
     is_interactive = sys.stdin.isatty() and not (provider_arg and model_arg)
     use_planner_implementer_selection = is_interactive and catalog is not None

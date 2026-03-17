@@ -498,11 +498,7 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     throw new Error(`Missing or invalid template: ${promptsPath}. Run from repo root or ensure templates exist.`);
   }
 
-  const workflowContent = loadWorkflowMdc(projectRoot);
-  const systemPrompt =
-    workflowContent +
-    "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything.";
-
+  const systemPrompt = loadWorkflowMdc(projectRoot);
   let exitCode = 0;
   let selectedPlanner: DoctorAiModelOption;
   let selectedImplementer: DoctorAiModelOption;
