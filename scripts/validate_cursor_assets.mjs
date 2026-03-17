@@ -36,21 +36,28 @@ function requireContains(filePath, text, required) {
 }
 
 function parseFrontmatter(filePath, text) {
-  if (!text.startsWith("---\n")) {
+  const normalized = text.replace(/\r\n/g, "\n");
+  if (!normalized.startsWith("---\n")) {
     fail(`${filePath} must start with YAML frontmatter`);
   }
-  const end = text.indexOf("\n---\n", 4);
+  const end = normalized.indexOf("\n---\n", 4);
   if (end === -1) {
     fail(`${filePath} has invalid frontmatter delimiter`);
   }
   return {
-    frontmatter: text.slice(4, end),
-    body: text.slice(end + 5),
+    frontmatter: normalized.slice(4, end),
+    body: normalized.slice(end + 5),
   };
 }
 
+function normalizeLineEndings(text) {
+  return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+}
+
 function ensureEqual(aPath, aText, bPath, bText) {
-  if (aText !== bText) {
+  const a = normalizeLineEndings(aText);
+  const b = normalizeLineEndings(bText);
+  if (a !== b) {
     fail(`template/runtime mismatch: ${aPath} != ${bPath}`);
   }
 }
