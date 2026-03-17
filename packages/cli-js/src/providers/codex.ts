@@ -266,6 +266,16 @@ function runCodexExecStreaming(
       stdio: ["pipe", "pipe", "pipe"],
     });
     const clearTimeoutRef = scheduleTimeout(child);
+    child.stdin.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EPIPE") {
+        return;
+      }
+      clearTimeoutRef();
+      if (!settled) {
+        settled = true;
+        reject(err);
+      }
+    });
     child.stdin.write(fullPrompt, "utf-8");
     child.stdin.end();
     child.stdout?.on("data", handleStdout);
