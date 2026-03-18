@@ -1,0 +1,11 @@
+# Shell scripts must use LF so they run on Mac/Linux (e.g. .cursor/skills/*/scripts/*.sh).
+*.sh text eol=lf
+# Cursor rules/skills: keep LF for cross-platform and CI (template–runtime comparison, script execution).
+.cursor/rules/*.mdc text eol=lf
+.cursor/skills/**/*.md text eol=lf
+.cursor/skills/**/*.py text eol=lf
+.cursor/skills/**/*.ps1 text eol=lf
+templates/cursor/rules/*.mdc text eol=lf
+templates/cursor/skills/**/*.md text eol=lf
+templates/cursor/skills/**/*.py text eol=lf
+templates/cursor/skills/**/*.ps1 text eol=lf

@@ -316,8 +316,10 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     body += "\n\n---\n\n" + load_prompt(prompts_dir / "append-i18n.md") + "\n\n" + load_prompt(prompts_dir / "append-slug.md")
     full_prompt = body + "\n\n---\n\nUser goal: " + goal
+    timeout_sec = opts.get("streamTimeoutSec", CLAUDE_ONE_TURN_TIMEOUT_S)
+    timeout_arg = None if timeout_sec == 0 else (timeout_sec or CLAUDE_ONE_TURN_TIMEOUT_S)
     try:
-        return _run_claude_streaming(full_prompt, cwd)
+        return _run_claude_streaming(full_prompt, cwd, timeout=timeout_arg)
     except Exception as e:
         raise RuntimeError("Claude plan failed: " + str(e)) from e
 
@@ -343,7 +345,9 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
     if (opts.get("codeContext") or "").strip():
         body += "\n\n---\n\nRelevant file contents:\n" + (opts["codeContext"] or "").strip()
     full_prompt = body + "\n\n---\n\nUser request: " + prompt
+    timeout_sec = opts.get("streamTimeoutSec", CLAUDE_ONE_TURN_TIMEOUT_S)
+    timeout_arg = None if timeout_sec == 0 else (timeout_sec or CLAUDE_ONE_TURN_TIMEOUT_S)
     try:
-        return _run_claude_streaming(full_prompt, cwd)
+        return _run_claude_streaming(full_prompt, cwd, timeout=timeout_arg)
     except Exception as e:
         raise RuntimeError("Claude implement failed: " + str(e)) from e

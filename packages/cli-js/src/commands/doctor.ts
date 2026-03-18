@@ -4,6 +4,7 @@
 
 import fs from "fs-extra";
 import readline from "readline";
+import { createSpinner } from "../utils/spinner.js";
 import { resolve } from "path";
 import {
   getProjectRoot,
@@ -12,12 +13,12 @@ import {
   getTemplatesRoot,
 } from "../utils/paths.js";
 import { printCurrentAiConfig, selectFromList } from "../utils/tui.js";
-import { loadConfig, getDefaultDoctorAiConfig } from "../config/load.js";
+import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
-import { checkClaude, listModelsClaude } from "../providers/claude.js";
-import { checkCodex, listModelsCodex } from "../providers/codex.js";
+import { checkClaude } from "../providers/claude.js";
+import { checkCodex } from "../providers/codex.js";
 import { getOneTurnRunner } from "../providers/registry.js";
-import { loadModelsCatalog, type ModelsCatalog } from "./model.js";
+import { loadModelsCatalog, runModelTui, type ModelsCatalog } from "./model.js";
 
 const URL_TEST_URL = "https://httpbin.org/get";
 const URL_TEST_TIMEOUT_MS = 5_000;
@@ -74,19 +75,11 @@ function isDatedPlanFileName(name: string): boolean {
 const DOCTOR_MODE_STATIC = "static";
 const DOCTOR_MODE_AI = "ai";
 
-/** When doctor is run without subcommand: TTY shows Doctor AI config (default) then mode selection (static/ai/Quit); non-TTY runs static. */
+/** When doctor is run without subcommand: TTY shows mode selection (static/ai/Quit) first; non-TTY runs static. */
 export async function runDoctorModeSelect(): Promise<void> {
   if (!process.stdin.isTTY) {
     await runDoctor([]);
     return;
-  }
-  const hasClaude = checkClaude();
-  const hasCodex = checkCodex();
-  try {
-    const doctorAiConfig = getDefaultDoctorAiConfig(hasClaude, hasCodex);
-    printCurrentAiConfig(doctorAiConfig, "Doctor AI config (default)");
-  } catch {
-    // skip config block if templates missing
   }
   const chosen = await selectFromList(
     [
@@ -276,23 +269,7 @@ async function runStreamingDoctorTc(
   const reset = "\x1b[0m";
   const passColor = "\x1b[92m";
   const failColor = "\x1b[31m";
-  const spinnerFrames = ["|", "/", "-", "\\"];
-  let spinnerInterval: ReturnType<typeof setInterval> | null = null;
-  const startSpinner = () => {
-    let frameIdx = 0;
-    spinnerInterval = setInterval(() => {
-      readline.clearLine(process.stdout, 0);
-      readline.cursorTo(process.stdout, 0);
-      process.stdout.write(`    ${dim}response:${reset} ${spinnerFrames[frameIdx % spinnerFrames.length]}`);
-      frameIdx++;
-    }, 80);
-  };
-  const stopSpinner = () => {
-    if (spinnerInterval !== null) {
-      clearInterval(spinnerInterval);
-      spinnerInterval = null;
-    }
-  };
+  const spinner = createSpinner({ prefix: "    response: " });
   const render = (suffix = "") => {
     const normalized = response.replace(/\s+/g, " ").trim();
     readline.clearLine(process.stdout, 0);
@@ -304,12 +281,12 @@ async function runStreamingDoctorTc(
   process.stdout.write(`    ${dim}response:${reset} `);
 
   try {
-    startSpinner();
+    spinner.start();
     const finalResponse = await runner.streamOneTurn(
       systemPrompt,
       userMessage,
       (chunk) => {
-        if (response.length === 0 && chunk.length > 0) stopSpinner();
+        if (response.length === 0 && chunk.length > 0) spinner.stop();
         response += chunk;
         if (!passShown && expectedKeywords.some((keyword) => response.includes(keyword))) {
           passShown = true;
@@ -322,14 +299,14 @@ async function runStreamingDoctorTc(
       },
       { cwd, model }
     );
-    stopSpinner();
+    spinner.stop();
     response = finalResponse;
     const passed = expectedKeywords.some((keyword) => response.includes(keyword));
     render(passed ? `  ${passColor}\u2713 PASS${reset}` : `  ${failColor}\u2717 FAIL${reset}`);
     process.stdout.write("\n");
     return { passed, response };
   } catch (err) {
-    stopSpinner();
+    spinner.stop();
     render(`  ${failColor}\u2717 FAIL${reset}`);
     process.stdout.write("\n");
     return {
@@ -354,83 +331,10 @@ function loadWorkflowMdc(projectRoot: string): string {
   );
 }
 
-function buildModelListFromConfig(config: PlanForgeConfig, hasClaude: boolean, hasCodex: boolean): DoctorAiModelOption[] {
-  const seen = new Set<string>();
-  const options: DoctorAiModelOption[] = [];
-  const recommendedKey = config.planner.provider + "|" + config.planner.model;
-  for (const role of ["planner", "implementer"] as const) {
-    const r = config[role];
-    const key = r.provider + "|" + r.model;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    if (r.provider === "claude" && !hasClaude) continue;
-    if (r.provider === "codex" && !hasCodex) continue;
-    options.push({
-      provider: r.provider,
-      model: r.model,
-      recommended: key === recommendedKey,
-    });
-  }
-  return options;
-}
-
-/** Build flat provider/model options from models.json catalog for available providers only. */
-function buildOptionsFromCatalog(catalog: ModelsCatalog, hasClaude: boolean, hasCodex: boolean): DoctorAiModelOption[] {
-  const options: DoctorAiModelOption[] = [];
-  const seen = new Set<string>();
-  for (const providerId of Object.keys(catalog.providers)) {
-    if (providerId === "claude" && !hasClaude) continue;
-    if (providerId === "codex" && !hasCodex) continue;
-    const prov = catalog.providers[providerId];
-    const models = prov?.models ?? [];
-    for (const m of models) {
-      const key = providerId + "|" + m.id;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      options.push({ provider: providerId, model: m.id, recommended: false });
-    }
-  }
-  return options;
-}
-
-/**
- * Interactive: select provider then model (last model = recommended). Returns { provider, model } or null if canceled.
- */
-async function selectProviderAndModel(
-  catalog: ModelsCatalog,
-  hasClaude: boolean,
-  hasCodex: boolean,
-  roleLabel: string
-): Promise<{ provider: string; model: string } | null> {
-  const providerIds = Object.keys(catalog.providers).filter(
-    (p) => (p === "claude" && hasClaude) || (p === "codex" && hasCodex)
-  );
-  if (providerIds.length === 0) return null;
-
-  for (;;) {
-    const providerId = await selectFromList(
-      providerIds.map((id) => ({
-        label: `${catalog.providers[id]?.name ?? id} (${id})`,
-        value: id,
-      })),
-      `Select ${roleLabel}  [Up/Down]  Enter to confirm`
-    );
-    if (providerId === null) return null;
-
-    const prov = catalog.providers[providerId];
-    const models = prov?.models ?? [];
-    if (models.length === 0) continue;
-
-    const modelId = await selectFromList(
-      models.map((model, index) => ({
-        label: `${model.label} (${model.id})${index === models.length - 1 ? "  (recommended)" : ""}`,
-        value: model.id,
-      })),
-      "[Up/Down] model  Enter to confirm  (last = recommended)"
-    );
-    if (modelId === null) continue;
-    return { provider: providerId, model: modelId };
-  }
+/** Validate that provider+model exists in catalog (for --provider --model). */
+function isValidProviderModel(catalog: ModelsCatalog, provider: string, model: string): boolean {
+  const prov = catalog.providers[provider];
+  return Boolean(prov?.models?.some((m) => m.id === model));
 }
 
 export async function runDoctorAi(args: string[]): Promise<void> {
@@ -447,54 +351,18 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     process.exit(1);
   }
 
-  let catalog: ModelsCatalog | null = null;
+  let catalog: ModelsCatalog;
   try {
     catalog = loadModelsCatalog();
-  } catch {
-    catalog = null;
-  }
-
-  let options: DoctorAiModelOption[];
-  if (catalog !== null) {
-    options = buildOptionsFromCatalog(catalog, hasClaude, hasCodex);
-  } else {
-    const claudeModels = await listModelsClaude();
-    const codexModels = await listModelsCodex();
-    if (claudeModels !== null || codexModels !== null) {
-      options = [];
-      if (claudeModels !== null && hasClaude) {
-        for (const model of claudeModels) {
-          options.push({
-            provider: "claude",
-            model,
-            recommended: config.planner.provider === "claude" && config.planner.model === model,
-          });
-        }
-      }
-      if (codexModels !== null && hasCodex) {
-        for (const model of codexModels) {
-          options.push({
-            provider: "codex",
-            model,
-            recommended: config.planner.provider === "codex" && config.planner.model === model,
-          });
-        }
-      }
-      if (options.length === 0) options = buildModelListFromConfig(config, hasClaude, hasCodex);
-    } else {
-      options = buildModelListFromConfig(config, hasClaude, hasCodex);
-    }
-  }
-
-  if (options.length === 0) {
-    console.error("No AI provider available. Install Claude or Codex CLI and run planforge init.");
+  } catch (e) {
+    console.error((e as Error).message);
+    console.error("doctor ai uses the same model catalog as planforge model. Run pnpm run build in cli-js or use planforge model.");
     process.exit(1);
   }
 
   const providerArg = args.includes("--provider") ? args[args.indexOf("--provider") + 1] : undefined;
   const modelArg = args.includes("--model") ? args[args.indexOf("--model") + 1] : undefined;
   const isInteractive = process.stdin.isTTY && !providerArg && !modelArg;
-  const usePlannerImplementerSelection = isInteractive && catalog !== null;
 
   const promptsPath = resolve(getTemplatesRoot(), "doctor", "prompts.json");
   if (!fs.existsSync(promptsPath)) {
@@ -513,32 +381,30 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     throw new Error(`Missing or invalid template: ${promptsPath}. Run from repo root or ensure templates exist.`);
   }
 
-  const workflowContent = loadWorkflowMdc(projectRoot);
-  const systemPrompt =
-    workflowContent +
-    "\n\nAnswer in one sentence only: what command or action you will take for the user request. Do not run anything.";
-
+  const systemPrompt = loadWorkflowMdc(projectRoot);
   let exitCode = 0;
   let selectedPlanner: DoctorAiModelOption;
   let selectedImplementer: DoctorAiModelOption;
 
   if (providerArg && modelArg) {
-    const match = options.find((o) => o.provider === providerArg && o.model === modelArg);
-    if (!match) {
-      console.error(`No matching option for --provider ${providerArg} --model ${modelArg}`);
+    if (!isValidProviderModel(catalog, providerArg, modelArg)) {
+      console.error(`No matching option for --provider ${providerArg} --model ${modelArg}. Check models.json catalog.`);
       process.exit(1);
     }
-    selectedPlanner = selectedImplementer = match;
+    selectedPlanner = selectedImplementer = {
+      provider: providerArg,
+      model: modelArg,
+      recommended: false,
+    };
   } else if (isInteractive) {
-    const doctorAiDefault = getDefaultDoctorAiConfig(hasClaude, hasCodex);
     selectedPlanner = {
-      provider: doctorAiDefault.planner.provider,
-      model: doctorAiDefault.planner.model,
+      provider: config.planner.provider,
+      model: config.planner.model,
       recommended: false,
     };
     selectedImplementer = {
-      provider: doctorAiDefault.implementer.provider,
-      model: doctorAiDefault.implementer.model,
+      provider: config.implementer.provider,
+      model: config.implementer.model,
       recommended: false,
     };
     for (;;) {
@@ -547,12 +413,12 @@ export async function runDoctorAi(args: string[]): Promise<void> {
           planner: {
             provider: selectedPlanner.provider,
             model: selectedPlanner.model,
-            ...(doctorAiDefault.planner.effort != null && { effort: doctorAiDefault.planner.effort }),
+            ...(config.planner.effort != null && { effort: config.planner.effort }),
           },
           implementer: {
             provider: selectedImplementer.provider,
             model: selectedImplementer.model,
-            ...(doctorAiDefault.implementer.reasoning != null && { reasoning: doctorAiDefault.implementer.reasoning }),
+            ...(config.implementer.reasoning != null && { reasoning: config.implementer.reasoning }),
           },
         },
         "Doctor AI config"
@@ -568,44 +434,63 @@ export async function runDoctorAi(args: string[]): Promise<void> {
       if (action === null) process.exit(exitCode);
       if (action === "run") break;
 
-      if (usePlannerImplementerSelection) {
-        const firstRole = await selectFromList(
-          [
-            { label: "planner", value: "planner" as const },
-            { label: "implementer", value: "implementer" as const },
-          ],
-          "Mode  [Up/Down]  Enter to confirm"
-        );
-        if (firstRole === null) process.exit(exitCode);
-        const secondRole = firstRole === "planner" ? "implementer" : "planner";
+      const firstRole = await selectFromList(
+        [
+          { label: "planner", value: "planner" as const },
+          { label: "implementer", value: "implementer" as const },
+        ],
+        "Role to change  [Up/Down]  Enter to confirm"
+      );
+      if (firstRole === null) process.exit(exitCode);
+      const secondRole = firstRole === "planner" ? "implementer" : "planner";
 
-        const firstSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, firstRole);
-        if (firstSel === null) process.exit(exitCode);
-        const secondSel = await selectProviderAndModel(catalog!, hasClaude, hasCodex, secondRole);
-        if (secondSel === null) process.exit(exitCode);
+      const firstResult = await runModelTui(catalog, hasClaude, hasCodex, config, {
+        preselectedMode: firstRole,
+      });
+      if (firstResult === null) process.exit(exitCode);
+      const secondResult = await runModelTui(catalog, hasClaude, hasCodex, config, {
+        preselectedMode: secondRole,
+      });
+      if (secondResult === null) process.exit(exitCode);
 
-        selectedPlanner =
-          firstRole === "planner"
-            ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
-            : { provider: secondSel.provider, model: secondSel.model, recommended: false };
-        selectedImplementer =
-          firstRole === "implementer"
-            ? { provider: firstSel.provider, model: firstSel.model, recommended: false }
-            : { provider: secondSel.provider, model: secondSel.model, recommended: false };
-      } else {
-        const selected = await selectFromList(
-          options.map((option) => ({
-            label: `${option.provider} (${option.model})`,
-            value: option,
-          })),
-          "Select AI for workflow test  [Up/Down]  Enter to confirm"
-        );
-        if (selected === null) process.exit(exitCode);
-        selectedPlanner = selectedImplementer = selected;
-      }
+      const plannerResult = firstRole === "planner" ? firstResult : secondResult;
+      const implementerResult = firstRole === "implementer" ? firstResult : secondResult;
+      selectedPlanner = {
+        provider: plannerResult.config.provider,
+        model: plannerResult.config.model,
+        recommended: false,
+      };
+      selectedImplementer = {
+        provider: implementerResult.config.provider,
+        model: implementerResult.config.model,
+        recommended: false,
+      };
+      config.planner = {
+        ...config.planner,
+        provider: plannerResult.config.provider,
+        model: plannerResult.config.model,
+        ...(plannerResult.config.effort != null && { effort: plannerResult.config.effort }),
+        ...(plannerResult.config.reasoning != null && { reasoning: plannerResult.config.reasoning }),
+      };
+      config.implementer = {
+        ...config.implementer,
+        provider: implementerResult.config.provider,
+        model: implementerResult.config.model,
+        ...(implementerResult.config.effort != null && { effort: implementerResult.config.effort }),
+        ...(implementerResult.config.reasoning != null && { reasoning: implementerResult.config.reasoning }),
+      };
     }
   } else {
-    selectedPlanner = selectedImplementer = options[0];
+    selectedPlanner = {
+      provider: config.planner.provider,
+      model: config.planner.model,
+      recommended: false,
+    };
+    selectedImplementer = {
+      provider: config.implementer.provider,
+      model: config.implementer.model,
+      recommended: false,
+    };
   }
 
   const plannerRunner = getOneTurnRunner(selectedPlanner.provider);

@@ -103,8 +103,9 @@ function looksLikePlan(stdout: string): boolean {
 }
 
 /**
- * Run "codex exec" with the given prompt. On Windows uses temp file + PowerShell to avoid
- * EINVAL from spawning .cmd directly (CVE-2024-27980) and to avoid shell splitting long args.
+ * Run "codex exec" with the given prompt. On all platforms the prompt is passed via stdin
+ * (codex exec -) to avoid argv length limits and CLI parsing of special characters (e.g. ---).
+ * On Windows uses temp file + PowerShell to avoid EINVAL from spawning .cmd (CVE-2024-27980).
  * When allowPlanFallback is true, non-zero exit is still treated as success if stdout looks like a plan
  * (used only for runPlan; runImplement must not treat non-zero as success).
  */
@@ -144,7 +145,7 @@ function runCodexExec(fullPrompt: string, cwd: string, allowPlanFallback = false
     }
   }
 
-  const result = spawnSync(exe, ["exec", fullPrompt], { ...opts, shell: false });
+  const result = spawnSync(exe, ["exec", "-"], { ...opts, input: fullPrompt, shell: false });
   const out = (result.stdout ?? "").trim();
   if (result.status !== 0) {
     if (allowPlanFallback && result.status === 1 && looksLikePlan(out)) {
@@ -172,12 +173,28 @@ function runCodexExecStreaming(
   const exe = resolveCodexExe();
   if (!exe) return Promise.reject(new Error(CODEX_NOT_FOUND_MSG));
 
+  const timeoutMs = streamOpts?.timeoutMs;
+  const useTimeout = timeoutMs === undefined ? true : timeoutMs !== 0;
+  const effectiveMs = timeoutMs === undefined ? CODEX_ONE_TURN_TIMEOUT_MS : timeoutMs === 0 ? 0 : timeoutMs;
+
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
     const opts = { cwd };
     const writeStdout = streamOpts?.writeStdout ?? true;
     let settled = false;
+
+    const scheduleTimeout = (child: ReturnType<typeof spawn>) => {
+      if (!useTimeout || effectiveMs === 0) return () => {};
+      const t = setTimeout(() => {
+        child.kill();
+        if (!settled) {
+          settled = true;
+          reject(new Error(`Codex streaming timed out after ${Math.floor(effectiveMs / 1000)}s`));
+        }
+      }, effectiveMs);
+      return () => clearTimeout(t);
+    };
 
     const finish = (code: number | null) => {
       if (settled) return;
@@ -222,15 +239,9 @@ function runCodexExecStreaming(
         ...opts,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      const timeout = setTimeout(() => {
-        child.kill();
-        if (!settled) {
-          settled = true;
-          reject(new Error(`Codex streaming timed out after ${Math.floor((streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS) / 1000)}s`));
-        }
-      }, streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS);
+      const clearTimeoutRef = scheduleTimeout(child);
       child.on("close", (code) => {
-        clearTimeout(timeout);
+        clearTimeoutRef();
         try {
           unlinkSync(tempPath);
         } catch {
@@ -241,7 +252,7 @@ function runCodexExecStreaming(
       child.stdout?.on("data", handleStdout);
       child.stderr?.on("data", handleStderr);
       child.on("error", (err) => {
-        clearTimeout(timeout);
+        clearTimeoutRef();
         if (!settled) {
           settled = true;
           reject(err);
@@ -250,25 +261,31 @@ function runCodexExecStreaming(
       return;
     }
 
-    const child = spawn(exe, ["exec", fullPrompt], {
+    const child = spawn(exe, ["exec", "-"], {
       ...opts,
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
-    const timeout = setTimeout(() => {
-      child.kill();
+    const clearTimeoutRef = scheduleTimeout(child);
+    child.stdin.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EPIPE") {
+        return;
+      }
+      clearTimeoutRef();
       if (!settled) {
         settled = true;
-        reject(new Error(`Codex streaming timed out after ${Math.floor((streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS) / 1000)}s`));
+        reject(err);
       }
-    }, streamOpts?.timeoutMs ?? CODEX_ONE_TURN_TIMEOUT_MS);
+    });
+    child.stdin.write(fullPrompt, "utf-8");
+    child.stdin.end();
     child.stdout?.on("data", handleStdout);
     child.stderr?.on("data", handleStderr);
     child.on("close", (code) => {
-      clearTimeout(timeout);
+      clearTimeoutRef();
       finish(code);
     });
     child.on("error", (err) => {
-      clearTimeout(timeout);
+      clearTimeoutRef();
       if (!settled) {
         settled = true;
         reject(err);
@@ -304,7 +321,19 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
 
   try {
-    return await runCodexExecStreaming(fullPrompt, cwd, true);
+    let onFirstChunkFired = false;
+    const streamOpts: { timeoutMs?: number; onChunk?: (chunk: string) => void } = {
+      timeoutMs: opts?.streamTimeoutMs,
+    };
+    if (opts?.onFirstChunk) {
+      streamOpts.onChunk = (chunk: string) => {
+        if (!onFirstChunkFired && chunk.length > 0) {
+          onFirstChunkFired = true;
+          opts.onFirstChunk!();
+        }
+      };
+    }
+    return await runCodexExecStreaming(fullPrompt, cwd, true, streamOpts);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
@@ -346,7 +375,9 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
   const fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
 
   try {
-    return await runCodexExecStreaming(fullPrompt, cwd);
+    return await runCodexExecStreaming(fullPrompt, cwd, false, {
+      timeoutMs: opts?.streamTimeoutMs,
+    });
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr

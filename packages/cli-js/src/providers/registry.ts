@@ -15,6 +15,10 @@ export interface PlanOpts {
   projectContext?: string;
   /** Source file for projectContext, e.g. AGENTS.md or CLAUDE.md. */
   projectContextSource?: string;
+  /** Stream timeout in ms. 0 = no timeout. */
+  streamTimeoutMs?: number;
+  /** Called once when the first output chunk is received (e.g. to stop a loading spinner). */
+  onFirstChunk?: () => void;
 }
 
 export interface ImplementOpts {
@@ -33,6 +37,8 @@ export interface ImplementOpts {
   projectContextSource?: string;
   /** Recent commit (oneline) per file for files to focus on. Capped in size. */
   recentCommitsPerFile?: string;
+  /** Stream timeout in ms. 0 = no timeout. */
+  streamTimeoutMs?: number;
 }
 
 export interface PlannerRunner {

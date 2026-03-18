@@ -2,11 +2,12 @@
 
 import json
 import re
+import sys
 from datetime import datetime
 from pathlib import Path
 
 from planforge.utils.paths import get_project_root, get_plans_dir, get_dated_plans_dir, get_date_parts
-from planforge.utils.config import load_config
+from planforge.utils.config import load_config, resolve_planner_stream_timeout_sec
 from planforge.utils.context import load_merged_context
 from planforge.utils.url_fetch import fetch_urls_context
 from planforge.utils.repo_context import get_repo_context
@@ -119,13 +120,17 @@ def run_plan(args: list[str], opts: dict | None = None) -> None:
         raise SystemExit(1)
     repo_context = get_repo_context(project_root, goal)
     project_context, project_context_source = get_project_context(project_root, provider)
+    stream_timeout_sec = resolve_planner_stream_timeout_sec(config["planner"])
     run_opts = {
         "cwd": project_root,
         "context": context,
         "repoContext": repo_context,
         "projectContext": project_context,
         "projectContextSource": project_context_source,
+        "streamTimeoutSec": stream_timeout_sec,
     }
+    if sys.stdout.isatty():
+        print("Loading...", flush=True)
     try:
         plan_body = run(goal, run_opts)
     except Exception as e:

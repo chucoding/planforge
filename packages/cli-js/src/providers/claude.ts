@@ -45,6 +45,8 @@ export interface CompleteOneTurnOpts {
 
 interface StreamOpts extends CompleteOneTurnOpts {
   writeStdout?: boolean;
+  /** Stream timeout in ms. 0 or undefined = no timeout. */
+  streamTimeoutMs?: number;
 }
 
 const CLAUDE_ONE_TURN_TIMEOUT_MS = 120_000;
@@ -162,7 +164,16 @@ export async function runPlan(goal: string, opts?: PlanOpts): Promise<string> {
   const fullPrompt = body + "\n\n---\n\nUser goal: " + goal;
 
   try {
-    return await runClaudeStreaming(fullPrompt, cwd);
+    let onFirstChunkFired = false;
+    const onChunk = opts?.onFirstChunk
+      ? (chunk: string) => {
+          if (!onFirstChunkFired && chunk.length > 0) {
+            onFirstChunkFired = true;
+            opts!.onFirstChunk!();
+          }
+        }
+      : undefined;
+    return await runClaudeStreaming(fullPrompt, cwd, { streamTimeoutMs: opts?.streamTimeoutMs }, onChunk);
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
@@ -204,7 +215,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
   const fullPrompt = body + "\n\n---\n\nUser request: " + prompt;
 
   try {
-    return await runClaudeStreaming(fullPrompt, cwd);
+    return await runClaudeStreaming(fullPrompt, cwd, { streamTimeoutMs: opts?.streamTimeoutMs });
   } catch (err) {
     const msg = (err as { stdout?: string; stderr?: string; message?: string }).stdout
       ?? (err as { stderr?: string }).stderr
@@ -221,7 +232,7 @@ export async function runImplement(prompt: string, opts?: ImplementOpts): Promis
 function runClaudeStreaming(
   fullPrompt: string,
   cwd: string,
-  opts?: Pick<StreamOpts, "writeStdout">,
+  opts?: Pick<StreamOpts, "writeStdout" | "streamTimeoutMs">,
   onChunk?: (chunk: string) => void
 ): Promise<string> {
   const exe = resolveClaudeExe();
@@ -232,6 +243,8 @@ function runClaudeStreaming(
       )
     );
   }
+  const timeoutMs = opts?.streamTimeoutMs;
+  const useTimeout = timeoutMs !== undefined && timeoutMs !== 0;
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
@@ -264,6 +277,15 @@ function runClaudeStreaming(
       process.stderr.write(chunk);
     };
 
+    const scheduleTimeout = (child: ReturnType<typeof spawn>) => {
+      if (!useTimeout) return () => {};
+      const t = setTimeout(() => {
+        child.kill();
+        finishReject(`Claude streaming timed out after ${Math.floor(timeoutMs! / 1000)}s`);
+      }, timeoutMs!);
+      return () => clearTimeout(t);
+    };
+
     if (process.platform === "win32") {
       const tempPath = join(tmpdir(), "planforge-claude-" + randomBytes(8).toString("hex") + ".txt");
       writeFileSync(tempPath, fullPrompt, "utf-8");
@@ -274,12 +296,9 @@ function runClaudeStreaming(
         cwd,
         stdio: ["ignore", "pipe", "pipe"],
       });
-      const timeout = setTimeout(() => {
-        child.kill();
-        finishReject("Claude streaming timed out after 120s");
-      }, CLAUDE_ONE_TURN_TIMEOUT_MS);
+      const clearTimeoutRef = scheduleTimeout(child);
       child.on("close", (code) => {
-        clearTimeout(timeout);
+        clearTimeoutRef();
         try {
           unlinkSync(tempPath);
         } catch {
@@ -296,7 +315,7 @@ function runClaudeStreaming(
       child.stdout?.on("data", handleStdout);
       child.stderr?.on("data", handleStderr);
       child.on("error", (err) => {
-        clearTimeout(timeout);
+        clearTimeoutRef();
         finishReject(err.message);
       });
       return;
@@ -313,14 +332,11 @@ function runClaudeStreaming(
       }
       child.stdin?.end();
     });
-    const timeout = setTimeout(() => {
-      child.kill();
-      finishReject("Claude streaming timed out after 120s");
-    }, CLAUDE_ONE_TURN_TIMEOUT_MS);
+    const clearTimeoutRef = scheduleTimeout(child);
     child.stdout?.on("data", handleStdout);
     child.stderr?.on("data", handleStderr);
     child.on("close", (code) => {
-      clearTimeout(timeout);
+      clearTimeoutRef();
       if (settled) return;
       if (code !== 0) {
         const stderr = Buffer.concat(stderrChunks).toString("utf-8").trim();
@@ -330,7 +346,7 @@ function runClaudeStreaming(
       finishResolve();
     });
     child.on("error", (err) => {
-      clearTimeout(timeout);
+      clearTimeoutRef();
       finishReject(err.message);
     });
   });

@@ -117,8 +117,9 @@ def _run_codex_exec(full_prompt: str, cwd: str, *, allow_plan_fallback: bool = F
             except OSError:
                 pass
     result = subprocess.run(
-        [exe, "exec", full_prompt],
+        [exe, "exec", "-"],
         cwd=cwd,
+        input=full_prompt,
         capture_output=True,
         text=True,
         timeout=300,
@@ -193,12 +194,18 @@ def _run_codex_exec_streaming(
             raise
     else:
         proc = subprocess.Popen(
-            [exe, "exec", full_prompt],
+            [exe, "exec", "-"],
             cwd=cwd,
+            stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
         )
+        try:
+            proc.stdin.write(full_prompt)
+            proc.stdin.close()
+        except BrokenPipeError:
+            pass
         temp_path = None
 
     t_out = threading.Thread(target=read_stdout, args=(proc,))
@@ -249,8 +256,10 @@ def run_plan(goal: str, opts: dict | None = None) -> str:
         body += "\n\n---\n\nConversation context:\n" + (opts["context"] or "").strip()
     body += "\n\n---\n\n" + load_prompt(prompts_dir / "append-i18n.md") + "\n\n" + load_prompt(prompts_dir / "append-slug.md")
     full_prompt = body + "\n\n---\n\nUser goal: " + goal
+    timeout_sec = opts.get("streamTimeoutSec")
+    timeout_arg = None if timeout_sec == 0 else (timeout_sec if timeout_sec is not None else CODEX_ONE_TURN_TIMEOUT_S)
     try:
-        return _run_codex_exec_streaming(full_prompt, cwd, allow_plan_fallback=True)
+        return _run_codex_exec_streaming(full_prompt, cwd, allow_plan_fallback=True, timeout=timeout_arg)
     except Exception as e:
         raise RuntimeError("Codex plan failed: " + str(e)) from e
 
@@ -276,7 +285,9 @@ def run_implement(prompt: str, opts: dict | None = None) -> str:
     if (opts.get("codeContext") or "").strip():
         body += "\n\n---\n\nRelevant file contents:\n" + (opts["codeContext"] or "").strip()
     full_prompt = body + "\n\n---\n\nUser request: " + prompt
+    timeout_sec = opts.get("streamTimeoutSec")
+    timeout_arg = None if timeout_sec == 0 else (timeout_sec if timeout_sec is not None else CODEX_ONE_TURN_TIMEOUT_S)
     try:
-        return _run_codex_exec(full_prompt, cwd)
+        return _run_codex_exec_streaming(full_prompt, cwd, allow_plan_fallback=False, timeout=timeout_arg)
     except Exception as e:
         raise RuntimeError("Codex implement failed: " + str(e)) from e
