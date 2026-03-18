@@ -38,20 +38,31 @@ export function loadModelsCatalog(): ModelsCatalog {
   return fs.readJsonSync(filePath) as ModelsCatalog;
 }
 
-/** Exported for planforge model: interactive mode => provider => model selection with effort/reasoning. */
+export interface RunModelTuiOptions {
+  /** When set, skip mode selection and use this mode (e.g. doctor ai uses planner/implementer). */
+  preselectedMode?: string;
+}
+
+/** Exported for planforge model and doctor ai: interactive mode => provider => model selection with effort/reasoning. */
 export async function runModelTui(
   catalog: ModelsCatalog,
   hasClaude: boolean,
   hasCodex: boolean,
-  defaultConfig?: PlanForgeConfig
+  defaultConfig?: PlanForgeConfig,
+  options?: RunModelTuiOptions
 ): Promise<{ mode: string; config: Record<string, string> } | null> {
   const { modes, modeProviders, providers } = catalog;
 
-  const mode = await selectFromList(
-    modes.map((m) => ({ label: m, value: m })),
-    "Mode: [Up/Down]  Enter to confirm"
-  );
-  if (mode === null) return null;
+  let mode: string | null;
+  if (options?.preselectedMode != null && modes.includes(options.preselectedMode)) {
+    mode = options.preselectedMode;
+  } else {
+    mode = await selectFromList(
+      modes.map((m) => ({ label: m, value: m })),
+      "Mode: [Up/Down]  Enter to confirm"
+    );
+    if (mode === null) return null;
+  }
 
   const providerIds = modeProviders[mode] ?? Object.keys(providers);
   const available = providerIds.filter(
