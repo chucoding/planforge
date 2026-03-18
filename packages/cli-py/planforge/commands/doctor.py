@@ -14,7 +14,7 @@ from planforge.utils.paths import (
     get_context_dir,
     get_templates_root,
 )
-from planforge.utils.config import load_config, get_default_doctor_ai_config
+from planforge.utils.config import load_config
 from planforge.providers.claude import (
     check_claude,
     complete_one_turn as claude_complete_one_turn,
@@ -129,17 +129,10 @@ def _run_streaming_doctor_tc(
 
 
 def run_doctor_mode_select() -> None:
-    """When doctor is run without subcommand: TTY shows Doctor AI config (default) then mode selection (static/ai/Quit); non-TTY runs static."""
+    """When doctor is run without subcommand: TTY shows mode selection (static/ai/Quit) first; non-TTY runs static."""
     if not sys.stdin.isatty():
         run_doctor([])
         return
-    has_claude = check_claude()
-    has_codex = check_codex()
-    try:
-        doctor_ai_config = get_default_doctor_ai_config(has_claude, has_codex)
-        print_current_ai_config(doctor_ai_config, "Doctor AI config (default)")
-    except (FileNotFoundError, RuntimeError):
-        pass
     mode_items = [
         ("static – Check environment and providers", DOCTOR_MODE_STATIC),
         ("ai – Run workflow tests with AI", DOCTOR_MODE_AI),
@@ -426,7 +419,7 @@ def run_doctor_ai(args: list[str]) -> None:
         raise SystemExit(1)
 
     # recommended = current planforge.json planner (plan assumption)
-    planner_key = f"{config.planner.get('provider', '')}|{config.planner.get('model', '')}"
+    planner_key = f"{config['planner'].get('provider', '')}|{config['planner'].get('model', '')}"
     options = [(p, m, (p + "|" + m) == planner_key) for (p, m, _) in options]
 
     provider_arg = None
@@ -459,12 +452,6 @@ def run_doctor_ai(args: list[str]) -> None:
     is_interactive = sys.stdin.isatty() and not (provider_arg and model_arg)
     use_planner_implementer_selection = is_interactive and catalog is not None
     exit_code = 0
-    doctor_ai_config = None
-    if is_interactive:
-        try:
-            doctor_ai_config = get_default_doctor_ai_config(has_claude, has_codex)
-        except (FileNotFoundError, RuntimeError):
-            pass
     while True:
         if provider_arg and model_arg:
             match = next((o for o in options if o[0] == provider_arg and o[1] == model_arg), None)
@@ -473,11 +460,11 @@ def run_doctor_ai(args: list[str]) -> None:
                 raise SystemExit(1)
             selected_planner = selected_implementer = (match[0], match[1])
         elif use_planner_implementer_selection:
-            pl = (doctor_ai_config or config)["planner"]
-            impl = (doctor_ai_config or config)["implementer"]
-            pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
-            impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
-            print("\n  Doctor AI config")
+            pl = config["planner"]
+            impl = config["implementer"]
+            pl_extra = f"effort: {pl.get('effort')}" if pl.get("effort") else (f"reasoning: {pl.get('reasoning')}" if pl.get("reasoning") else None)
+            impl_extra = f"effort: {impl.get('effort')}" if impl.get("effort") else (f"reasoning: {impl.get('reasoning')}" if impl.get("reasoning") else None)
+            print("\n  Doctor AI config (planforge.json)")
             print("  ----------------")
             print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}")
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
@@ -504,11 +491,11 @@ def run_doctor_ai(args: list[str]) -> None:
                 selected_implementer = first_sel
         elif sys.stdin.isatty():
             # Fallback: flat list when catalog missing
-            pl = (doctor_ai_config or config)["planner"]
-            impl = (doctor_ai_config or config)["implementer"]
-            pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
-            impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
-            print("\n  Doctor AI config")
+            pl = config["planner"]
+            impl = config["implementer"]
+            pl_extra = f"effort: {pl.get('effort')}" if pl.get("effort") else (f"reasoning: {pl.get('reasoning')}" if pl.get("reasoning") else None)
+            impl_extra = f"effort: {impl.get('effort')}" if impl.get("effort") else (f"reasoning: {impl.get('reasoning')}" if impl.get("reasoning") else None)
+            print("\n  Doctor AI config (planforge.json)")
             print("  ----------------")
             print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}")
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")

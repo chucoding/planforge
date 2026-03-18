@@ -13,7 +13,7 @@ import {
   getTemplatesRoot,
 } from "../utils/paths.js";
 import { printCurrentAiConfig, selectFromList } from "../utils/tui.js";
-import { loadConfig, getDefaultDoctorAiConfig } from "../config/load.js";
+import { loadConfig } from "../config/load.js";
 import type { PlanForgeConfig } from "../config/types.js";
 import { checkClaude, listModelsClaude } from "../providers/claude.js";
 import { checkCodex, listModelsCodex } from "../providers/codex.js";
@@ -75,19 +75,11 @@ function isDatedPlanFileName(name: string): boolean {
 const DOCTOR_MODE_STATIC = "static";
 const DOCTOR_MODE_AI = "ai";
 
-/** When doctor is run without subcommand: TTY shows Doctor AI config (default) then mode selection (static/ai/Quit); non-TTY runs static. */
+/** When doctor is run without subcommand: TTY shows mode selection (static/ai/Quit) first; non-TTY runs static. */
 export async function runDoctorModeSelect(): Promise<void> {
   if (!process.stdin.isTTY) {
     await runDoctor([]);
     return;
-  }
-  const hasClaude = checkClaude();
-  const hasCodex = checkCodex();
-  try {
-    const doctorAiConfig = getDefaultDoctorAiConfig(hasClaude, hasCodex);
-    printCurrentAiConfig(doctorAiConfig, "Doctor AI config (default)");
-  } catch {
-    // skip config block if templates missing
   }
   const chosen = await selectFromList(
     [
@@ -511,15 +503,14 @@ export async function runDoctorAi(args: string[]): Promise<void> {
     }
     selectedPlanner = selectedImplementer = match;
   } else if (isInteractive) {
-    const doctorAiDefault = getDefaultDoctorAiConfig(hasClaude, hasCodex);
     selectedPlanner = {
-      provider: doctorAiDefault.planner.provider,
-      model: doctorAiDefault.planner.model,
+      provider: config.planner.provider,
+      model: config.planner.model,
       recommended: false,
     };
     selectedImplementer = {
-      provider: doctorAiDefault.implementer.provider,
-      model: doctorAiDefault.implementer.model,
+      provider: config.implementer.provider,
+      model: config.implementer.model,
       recommended: false,
     };
     for (;;) {
@@ -528,12 +519,12 @@ export async function runDoctorAi(args: string[]): Promise<void> {
           planner: {
             provider: selectedPlanner.provider,
             model: selectedPlanner.model,
-            ...(doctorAiDefault.planner.effort != null && { effort: doctorAiDefault.planner.effort }),
+            ...(config.planner.effort != null && { effort: config.planner.effort }),
           },
           implementer: {
             provider: selectedImplementer.provider,
             model: selectedImplementer.model,
-            ...(doctorAiDefault.implementer.reasoning != null && { reasoning: doctorAiDefault.implementer.reasoning }),
+            ...(config.implementer.reasoning != null && { reasoning: config.implementer.reasoning }),
           },
         },
         "Doctor AI config"
