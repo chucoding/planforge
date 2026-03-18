@@ -23,7 +23,6 @@ planforge.json
 .cursor/contexts
 .cursor/rules/code-comments.mdc
 .cursor/rules/notion.mdc
-.cursor/rules/pr-writing.mdc
 
 # logs
 *.log

@@ -1,0 +1,49 @@
+---
+description: When the user asks for a PR, output markdown based on the template and session context
+alwaysApply: false
+---
+
+# PR Writing Rules
+
+When the user **requests a PR** (e.g. "Write a PR", "Create a PR"), follow the steps below.
+
+## 1. Use the Template
+
+- **File**: Read `.github/PULL_REQUEST_TEMPLATE.md` and follow its structure.
+- Keep the template sections (Purpose, Description, How to test, Review Requirement, Additional Info) and replace placeholders (`_…_`) with actual content.
+
+## 2. Writing Content
+
+- **Session context**: Fill each section from the requests, changes, and decisions made in the current session.
+- **Purpose**: State the goal of the PR in one or two clear sentences.
+- **Description**: List modified/added files, a concise summary of changes, and any preserved behavior. Use lists and tables where helpful.
+- **How to test**: Numbered steps for the reviewer to verify the changes locally or in the browser.
+- **Review Requirement**: What the reviewer should pay extra attention to.
+- **Additional Info**: Issue reference, **link to the related Notion page** (required), and any other links or notes.
+
+## 2.5 Notion Link (Required)
+
+- **Always** include a **link to the related Notion page** in the PR body.
+- **Place**: In the Additional Info section as "Related Notion: [Page title](URL)". You may also put it at the top of Description.
+- **URL**: Use the Notion URL shared in the conversation if available. Otherwise add a placeholder (e.g. `Related Notion: (add the Notion page URL for this work)`) and ask the user to fill it.
+
+## 3. PR Title (Required)
+
+- The PR title **must** include the **issue/PR number**. Use **`[NO-ISSUE]`** if the branch name does not contain one.
+- **Extract the number from the current branch name**. Run `git branch --show-current` when writing the PR and use the number between slashes or hyphens (e.g. TSK-112, 110).
+  - e.g. `feature/TSK-112-add-feature` → `TSK-112`
+  - e.g. `fix/110-bug` → `110` or `TSK-110` (per project convention)
+  - e.g. `feature/add-something` (no number) → `[NO-ISSUE]`
+- **Format**: `[number] Title` or `[NO-ISSUE] Title` — **Do not use commit-style prefixes** (feat:, refactor:, fix:). Use a short descriptive title only.
+  - e.g. `[TSK-112] Remove character IP and switch to logo and icon UI`
+  - e.g. `[NO-ISSUE] Documentation cleanup`
+
+## 4. Output Format
+
+- Output **markdown** so the user can **copy and paste** it into the GitHub PR body.
+- **Always provide a PR title example** that includes the number from the current branch (or `[NO-ISSUE]`).
+- Wrap the body in a markdown code block (```markdown ... ```) for easy copying.
+
+## 5. Reference
+
+- Follow `code-comments.mdc` for code and comment style.
