@@ -14,7 +14,7 @@ from planforge.utils.paths import (
     get_context_dir,
     get_templates_root,
 )
-from planforge.utils.config import load_config, get_default_doctor_ai_config
+from planforge.utils.config import load_config
 from planforge.providers.claude import (
     check_claude,
     complete_one_turn as claude_complete_one_turn,
@@ -26,7 +26,7 @@ from planforge.providers.codex import (
     stream_one_turn as codex_stream_one_turn,
 )
 from planforge.utils.tui import print_current_ai_config, select_from_list
-from planforge.commands.model import _load_models_catalog
+from planforge.commands.model import _load_models_catalog, _run_model_tui
 
 DOCTOR_MODE_STATIC = "static"
 URL_TEST_URL = "https://httpbin.org/get"
@@ -129,17 +129,10 @@ def _run_streaming_doctor_tc(
 
 
 def run_doctor_mode_select() -> None:
-    """When doctor is run without subcommand: TTY shows Doctor AI config (default) then mode selection (static/ai/Quit); non-TTY runs static."""
+    """When doctor is run without subcommand: TTY shows mode selection (static/ai/Quit) first; non-TTY runs static."""
     if not sys.stdin.isatty():
         run_doctor([])
         return
-    has_claude = check_claude()
-    has_codex = check_codex()
-    try:
-        doctor_ai_config = get_default_doctor_ai_config(has_claude, has_codex)
-        print_current_ai_config(doctor_ai_config, "Doctor AI config (default)")
-    except (FileNotFoundError, RuntimeError):
-        pass
     mode_items = [
         ("static – Check environment and providers", DOCTOR_MODE_STATIC),
         ("ai – Run workflow tests with AI", DOCTOR_MODE_AI),
@@ -309,95 +302,13 @@ def _load_workflow_mdc(project_root: str) -> str:
     )
 
 
-def _build_model_list_from_config(config: dict, has_claude: bool, has_codex: bool) -> list[tuple[str, str, bool]]:
-    seen: set[str] = set()
-    options: list[tuple[str, str, bool]] = []
-    planner = config.get("planner") or {}
-    implementer = config.get("implementer") or {}
-    rec_key = f"{planner.get('provider', '')}|{planner.get('model', '')}"
-    for role in (planner, implementer):
-        prov = role.get("provider", "")
-        model = role.get("model", "")
-        key = f"{prov}|{model}"
-        if key in seen:
-            continue
-        seen.add(key)
-        if prov == "claude" and not has_claude:
-            continue
-        if prov == "codex" and not has_codex:
-            continue
-        options.append((prov, model, key == rec_key))
-    return options
-
-
-def _build_options_from_catalog(
-    catalog: dict, has_claude: bool, has_codex: bool
-) -> list[tuple[str, str, bool]]:
-    """Build flat (provider, model, recommended) from models.json catalog for available providers."""
-    options: list[tuple[str, str, bool]] = []
-    seen: set[str] = set()
-    for provider_id, prov_data in catalog.get("providers", {}).items():
-        if provider_id == "claude" and not has_claude:
-            continue
-        if provider_id == "codex" and not has_codex:
-            continue
-        models = prov_data.get("models", []) if isinstance(prov_data, dict) else []
-        for m in models:
-            model_id = m.get("id", "") if isinstance(m, dict) else ""
-            key = f"{provider_id}|{model_id}"
-            if key in seen:
-                continue
-            seen.add(key)
-            options.append((provider_id, model_id, False))
-    return options
-
-
-def _select_provider_and_model(
-    catalog: dict,
-    has_claude: bool,
-    has_codex: bool,
-    role_label: str,
-) -> tuple[str, str] | None:
-    """Interactive: select provider then model (last model = recommended). Returns (provider, model) or None if Quit."""
-    providers_data = catalog.get("providers", {})
-    provider_ids = [
-        p for p in providers_data
-        if (p == "claude" and has_claude) or (p == "codex" and has_codex)
-    ]
-    if not provider_ids:
-        return None
-
-    while True:
-        provider_items = [
-            (
-                f"{providers_data.get(p, {}).get('name', p) if isinstance(providers_data.get(p), dict) else p} ({p})",
-                p,
-            )
-            for p in provider_ids
-        ]
-        provider_id = select_from_list(
-            provider_items,
-            f"Select {role_label}  [Up/Down]  Enter to confirm",
-        )
-        if provider_id is None:
-            return None
-        prov = providers_data.get(provider_id) or {}
-        models = prov.get("models", []) if isinstance(prov, dict) else []
-        if not models:
-            continue
-        model_items = []
-        for i, m in enumerate(models):
-            mid = m.get("id", "") if isinstance(m, dict) else ""
-            label = m.get("label", mid) if isinstance(m, dict) else mid
-            rec = "  (recommended)" if i == len(models) - 1 else ""
-            model_items.append((f"{label} ({mid}){rec}", mid))
-        model_id = select_from_list(
-            model_items,
-            "[Up/Down] model  Enter to confirm  (last = recommended)",
-        )
-        if model_id is None:
-            continue
-        return (provider_id, model_id)
+def _is_valid_provider_model(catalog: dict, provider: str, model: str) -> bool:
+    """Validate that provider+model exists in catalog (for --provider --model)."""
+    prov = catalog.get("providers", {}).get(provider)
+    if not isinstance(prov, dict):
+        return False
+    models = prov.get("models", [])
+    return any(isinstance(m, dict) and m.get("id") == model for m in models)
 
 
 def run_doctor_ai(args: list[str]) -> None:
@@ -410,24 +321,12 @@ def run_doctor_ai(args: list[str]) -> None:
         print("Failed to load planforge.json:", e, file=sys.stderr)
         raise SystemExit(1) from e
 
-    catalog = None
     try:
         catalog = _load_models_catalog()
-    except FileNotFoundError:
-        catalog = None
-
-    if catalog is not None:
-        options = _build_options_from_catalog(catalog, has_claude, has_codex)
-    else:
-        options = _build_model_list_from_config(config, has_claude, has_codex)
-
-    if not options:
-        print("No AI provider available. Install Claude or Codex CLI and run planforge init.", file=sys.stderr)
-        raise SystemExit(1)
-
-    # recommended = current planforge.json planner (plan assumption)
-    planner_key = f"{config.planner.get('provider', '')}|{config.planner.get('model', '')}"
-    options = [(p, m, (p + "|" + m) == planner_key) for (p, m, _) in options]
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        print("doctor ai uses the same model catalog as planforge model. Run pnpm run build in cli-js or use planforge model.", file=sys.stderr)
+        raise SystemExit(1) from e
 
     provider_arg = None
     model_arg = None
@@ -457,173 +356,168 @@ def run_doctor_ai(args: list[str]) -> None:
     system_prompt = _load_workflow_mdc(project_root)
 
     is_interactive = sys.stdin.isatty() and not (provider_arg and model_arg)
-    use_planner_implementer_selection = is_interactive and catalog is not None
     exit_code = 0
-    doctor_ai_config = None
-    if is_interactive:
-        try:
-            doctor_ai_config = get_default_doctor_ai_config(has_claude, has_codex)
-        except (FileNotFoundError, RuntimeError):
-            pass
-    while True:
-        if provider_arg and model_arg:
-            match = next((o for o in options if o[0] == provider_arg and o[1] == model_arg), None)
-            if not match:
-                print(f"No matching option for --provider {provider_arg} --model {model_arg}", file=sys.stderr)
-                raise SystemExit(1)
-            selected_planner = selected_implementer = (match[0], match[1])
-        elif use_planner_implementer_selection:
-            pl = (doctor_ai_config or config)["planner"]
-            impl = (doctor_ai_config or config)["implementer"]
-            pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
-            impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
-            print("\n  Doctor AI config")
+    selected_planner = None
+    selected_implementer = None
+
+    if provider_arg and model_arg:
+        if not _is_valid_provider_model(catalog, provider_arg, model_arg):
+            print(f"No matching option for --provider {provider_arg} --model {model_arg}. Check models.json catalog.", file=sys.stderr)
+            raise SystemExit(1)
+        selected_planner = selected_implementer = (provider_arg, model_arg)
+    elif is_interactive:
+        selected_planner = (config["planner"].get("provider", ""), config["planner"].get("model", ""))
+        selected_implementer = (config["implementer"].get("provider", ""), config["implementer"].get("model", ""))
+        while True:
+            pl = config["planner"]
+            impl = config["implementer"]
+            pl_extra = f"effort: {pl.get('effort')}" if pl.get("effort") else (f"reasoning: {pl.get('reasoning')}" if pl.get("reasoning") else None)
+            impl_extra = f"effort: {impl.get('effort')}" if impl.get("effort") else (f"reasoning: {impl.get('reasoning')}" if impl.get("reasoning") else None)
+            print("\n  Doctor AI config (planforge.json)")
             print("  ----------------")
             print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}")
             print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
 
+            action = select_from_list(
+                [("Run immediately", "run"), ("Change models", "change")],
+                "Action  [Up/Down]  Enter to confirm",
+            )
+            if action is None:
+                raise SystemExit(exit_code)
+            if action == "run":
+                break
+
             first_role = select_from_list(
                 [("planner", "planner"), ("implementer", "implementer")],
-                "Mode  [Up/Down]  Enter to confirm",
+                "Role to change  [Up/Down]  Enter to confirm",
             )
             if first_role is None:
                 raise SystemExit(exit_code)
             second_role = "implementer" if first_role == "planner" else "planner"
 
-            first_sel = _select_provider_and_model(catalog, has_claude, has_codex, first_role)
-            if first_sel is None:
-                raise SystemExit(exit_code)
-            second_sel = _select_provider_and_model(catalog, has_claude, has_codex, second_role)
-            if second_sel is None:
-                raise SystemExit(exit_code)
-            if first_role == "planner":
-                selected_planner = first_sel
-                selected_implementer = second_sel
-            else:
-                selected_planner = second_sel
-                selected_implementer = first_sel
-        elif sys.stdin.isatty():
-            # Fallback: flat list when catalog missing
-            pl = (doctor_ai_config or config)["planner"]
-            impl = (doctor_ai_config or config)["implementer"]
-            pl_extra = f"effort: {pl['effort']}" if pl.get("effort") else (f"reasoning: {pl['reasoning']}" if pl.get("reasoning") else None)
-            impl_extra = f"effort: {impl['effort']}" if impl.get("effort") else (f"reasoning: {impl['reasoning']}" if impl.get("reasoning") else None)
-            print("\n  Doctor AI config")
-            print("  ----------------")
-            print(f"  {'planner'.ljust(12)}: {pl.get('provider', '').ljust(6)} / {pl.get('model', '').ljust(20)}{' (' + pl_extra + ')' if pl_extra else ''}")
-            print(f"  {'implementer'.ljust(12)}: {impl.get('provider', '').ljust(6)} / {impl.get('model', '').ljust(20)}{' (' + impl_extra + ')' if impl_extra else ''}")
-            flat_items = [(f"{prov} ({model})", (prov, model)) for (prov, model, _) in options]
-            selected = select_from_list(
-                flat_items,
-                "Select AI for workflow test  [Up/Down]  Enter to confirm",
+            first_result = _run_model_tui(
+                catalog, project_root, has_claude, has_codex, config,
+                preselected_mode=first_role,
             )
-            if selected is None:
+            if first_result is None:
                 raise SystemExit(exit_code)
-            selected_planner = selected_implementer = selected
-        else:
-            selected_planner = selected_implementer = (options[0][0], options[0][1])
+            second_result = _run_model_tui(
+                catalog, project_root, has_claude, has_codex, config,
+                preselected_mode=second_role,
+            )
+            if second_result is None:
+                raise SystemExit(exit_code)
 
-        planner_complete = claude_complete_one_turn if selected_planner[0] == "claude" else codex_complete_one_turn
-        implementer_complete = claude_complete_one_turn if selected_implementer[0] == "claude" else codex_complete_one_turn
+            planner_result = first_result if first_role == "planner" else second_result
+            implementer_result = second_result if first_role == "planner" else first_result
+            selected_planner = (planner_result[1]["provider"], planner_result[1]["model"])
+            selected_implementer = (implementer_result[1]["provider"], implementer_result[1]["model"])
+            config["planner"] = {**config["planner"], **planner_result[1]}
+            config["implementer"] = {**config["implementer"], **implementer_result[1]}
+    else:
+        selected_planner = (config["planner"].get("provider", ""), config["planner"].get("model", ""))
+        selected_implementer = (config["implementer"].get("provider", ""), config["implementer"].get("model", ""))
 
-        _cyan = "\033[36m"
-        _dim = "\033[2m"
-        _green = "\033[92m"
-        _red = "\033[31m"
-        _reset = "\033[0m"
-        _check = "\u2713"
-        _cross = "\u2717"
+    planner_complete = claude_complete_one_turn if selected_planner[0] == "claude" else codex_complete_one_turn
+    implementer_complete = claude_complete_one_turn if selected_implementer[0] == "claude" else codex_complete_one_turn
+
+    _cyan = "\033[36m"
+    _dim = "\033[2m"
+    _green = "\033[92m"
+    _red = "\033[31m"
+    _reset = "\033[0m"
+    _check = "\u2713"
+    _cross = "\u2717"
+    print("")
+    print(_cyan + "  \u2500\u2500\u2500 Workflow tests \u2500\u2500\u2500" + _reset)
+    print(_dim + "  planner: " + selected_planner[0] + " / " + selected_planner[1] + "  \u00b7  implementer: " + selected_implementer[0] + " / " + selected_implementer[1] + _reset)
+    print("")
+
+    tc1_pass = False
+    tc2_pass = False
+    tc3_pass = False
+    tc4_pass = False
+    if sys.stdout.isatty():
+        tc1_pass, tc1_error = _run_streaming_doctor_tc(
+            "TC1 (plan request)",
+            system_prompt,
+            tc1_msg,
+            ["planforge plan", "run_plan.sh", "run_plan.ps1"],
+            selected_planner[0],
+            selected_planner[1],
+            project_root,
+        )
+        if tc1_error:
+            print("TC1 (plan request) error:", tc1_error, file=sys.stderr)
+
+        tc2_pass, tc2_error = _run_streaming_doctor_tc(
+            "TC2 (implement request)",
+            system_prompt,
+            tc2_msg,
+            ["planforge implement", "run_implement.sh", "run_implement.ps1"],
+            selected_implementer[0],
+            selected_implementer[1],
+            project_root,
+        )
+        if tc2_error:
+            print("TC2 (implement request) error:", tc2_error, file=sys.stderr)
+
+        tc3_pass, tc3_error = _run_streaming_doctor_tc(
+            "TC3 (/p with implementation-style request)",
+            system_prompt,
+            tc3_msg,
+            ["planforge plan", "run_plan.sh", "run_plan.ps1"],
+            selected_planner[0],
+            selected_planner[1],
+            project_root,
+        )
+        if tc3_error:
+            print("TC3 (/p with implementation-style request) error:", tc3_error, file=sys.stderr)
+
+        print(f"  {_cyan}TC4 (URL fetch){_reset}")
+        tc4_pass, tc4_error = _run_url_fetch_tc()
+        if tc4_error:
+            print("TC4 (URL fetch) error:", tc4_error, file=sys.stderr)
+        print("    " + (_green + _check + " PASS  " + _reset if tc4_pass else _red + _cross + " FAIL  " + _reset) + "GET " + URL_TEST_URL)
+
+        print(_cyan + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset)
+        print("  " + (_green + _check + " PASS" + _reset if tc1_pass else _red + _cross + " FAIL" + _reset) + "  TC1 (plan request)")
+        print("  " + (_green + _check + " PASS" + _reset if tc2_pass else _red + _cross + " FAIL" + _reset) + "  TC2 (implement request)")
+        print("  " + (_green + _check + " PASS" + _reset if tc3_pass else _red + _cross + " FAIL" + _reset) + "  TC3 (/p with implementation-style request)")
+        print("  " + (_green + _check + " PASS" + _reset if tc4_pass else _red + _cross + " FAIL" + _reset) + "  TC4 (URL fetch)")
         print("")
-        print(_cyan + "  \u2500\u2500\u2500 Workflow tests \u2500\u2500\u2500" + _reset)
-        print(_dim + "  planner: " + selected_planner[0] + " / " + selected_planner[1] + "  \u00b7  implementer: " + selected_implementer[0] + " / " + selected_implementer[1] + _reset)
+    else:
+        try:
+            tc1_response = planner_complete(system_prompt, tc1_msg, cwd=project_root, model=selected_planner[1])
+            tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response or "run_plan.ps1" in tc1_response
+        except Exception as e:
+            print("TC1 (plan request) error:", e, file=sys.stderr)
+        try:
+            tc2_response = implementer_complete(system_prompt, tc2_msg, cwd=project_root, model=selected_implementer[1])
+            tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response or "run_implement.ps1" in tc2_response
+        except Exception as e:
+            print("TC2 (implement request) error:", e, file=sys.stderr)
+        try:
+            tc3_response = planner_complete(system_prompt, tc3_msg, cwd=project_root, model=selected_planner[1])
+            tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response or "run_plan.ps1" in tc3_response
+        except Exception as e:
+            print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
+        tc4_pass, tc4_err = _run_url_fetch_tc()
+        if tc4_err:
+            print("TC4 (URL fetch) error:", tc4_err, file=sys.stderr)
+
+        _cyan2 = "\033[36m"
+        _green2 = "\033[92m"
+        _red2 = "\033[31m"
+        _reset2 = "\033[0m"
+        _check2 = "\u2713"
+        _cross2 = "\u2717"
+        print(_cyan2 + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset2)
+        print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc1_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC1 (plan request)")
+        print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc2_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC2 (implement request)")
+        print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc3_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC3 (/p with implementation-style request)")
+        print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc4_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC4 (URL fetch)")
         print("")
-
-        tc1_pass = False
-        tc2_pass = False
-        tc3_pass = False
-        tc4_pass = False
-        if sys.stdout.isatty():
-            tc1_pass, tc1_error = _run_streaming_doctor_tc(
-                "TC1 (plan request)",
-                system_prompt,
-                tc1_msg,
-                ["planforge plan", "run_plan.sh", "run_plan.ps1"],
-                selected_planner[0],
-                selected_planner[1],
-                project_root,
-            )
-            if tc1_error:
-                print("TC1 (plan request) error:", tc1_error, file=sys.stderr)
-
-            tc2_pass, tc2_error = _run_streaming_doctor_tc(
-                "TC2 (implement request)",
-                system_prompt,
-                tc2_msg,
-                ["planforge implement", "run_implement.sh", "run_implement.ps1"],
-                selected_implementer[0],
-                selected_implementer[1],
-                project_root,
-            )
-            if tc2_error:
-                print("TC2 (implement request) error:", tc2_error, file=sys.stderr)
-
-            tc3_pass, tc3_error = _run_streaming_doctor_tc(
-                "TC3 (/p with implementation-style request)",
-                system_prompt,
-                tc3_msg,
-                ["planforge plan", "run_plan.sh", "run_plan.ps1"],
-                selected_planner[0],
-                selected_planner[1],
-                project_root,
-            )
-            if tc3_error:
-                print("TC3 (/p with implementation-style request) error:", tc3_error, file=sys.stderr)
-
-            print(f"  {_cyan}TC4 (URL fetch){_reset}")
-            tc4_pass, tc4_error = _run_url_fetch_tc()
-            if tc4_error:
-                print("TC4 (URL fetch) error:", tc4_error, file=sys.stderr)
-            print("    " + (_green + _check + " PASS  " + _reset if tc4_pass else _red + _cross + " FAIL  " + _reset) + "GET " + URL_TEST_URL)
-
-            print(_cyan + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset)
-            print("  " + (_green + _check + " PASS" + _reset if tc1_pass else _red + _cross + " FAIL" + _reset) + "  TC1 (plan request)")
-            print("  " + (_green + _check + " PASS" + _reset if tc2_pass else _red + _cross + " FAIL" + _reset) + "  TC2 (implement request)")
-            print("  " + (_green + _check + " PASS" + _reset if tc3_pass else _red + _cross + " FAIL" + _reset) + "  TC3 (/p with implementation-style request)")
-            print("  " + (_green + _check + " PASS" + _reset if tc4_pass else _red + _cross + " FAIL" + _reset) + "  TC4 (URL fetch)")
-            print("")
-        else:
-            try:
-                tc1_response = planner_complete(system_prompt, tc1_msg, cwd=project_root, model=selected_planner[1])
-                tc1_pass = "planforge plan" in tc1_response or "run_plan.sh" in tc1_response or "run_plan.ps1" in tc1_response
-            except Exception as e:
-                print("TC1 (plan request) error:", e, file=sys.stderr)
-            try:
-                tc2_response = implementer_complete(system_prompt, tc2_msg, cwd=project_root, model=selected_implementer[1])
-                tc2_pass = "planforge implement" in tc2_response or "run_implement.sh" in tc2_response or "run_implement.ps1" in tc2_response
-            except Exception as e:
-                print("TC2 (implement request) error:", e, file=sys.stderr)
-            try:
-                tc3_response = planner_complete(system_prompt, tc3_msg, cwd=project_root, model=selected_planner[1])
-                tc3_pass = "planforge plan" in tc3_response or "run_plan.sh" in tc3_response or "run_plan.ps1" in tc3_response
-            except Exception as e:
-                print("TC3 (/p with implementation-style request) error:", e, file=sys.stderr)
-            tc4_pass, tc4_err = _run_url_fetch_tc()
-            if tc4_err:
-                print("TC4 (URL fetch) error:", tc4_err, file=sys.stderr)
-
-            _cyan2 = "\033[36m"
-            _green2 = "\033[92m"
-            _red2 = "\033[31m"
-            _reset2 = "\033[0m"
-            _check2 = "\u2713"
-            _cross2 = "\u2717"
-            print(_cyan2 + "  \u2500\u2500\u2500 Results \u2500\u2500\u2500" + _reset2)
-            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc1_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC1 (plan request)")
-            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc2_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC2 (implement request)")
-            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc3_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC3 (/p with implementation-style request)")
-            print("  " + (_green2 + _check2 + " PASS" + _reset2 if tc4_pass else _red2 + _cross2 + " FAIL" + _reset2) + "  TC4 (URL fetch)")
-            print("")
-        if not tc1_pass or not tc2_pass or not tc3_pass or not tc4_pass:
-            exit_code = 1
-        if not is_interactive:
-            raise SystemExit(exit_code)
+    if not tc1_pass or not tc2_pass or not tc3_pass or not tc4_pass:
+        exit_code = 1
+    raise SystemExit(exit_code)

@@ -25,15 +25,22 @@ def _run_model_tui(
     has_claude: bool,
     has_codex: bool,
     default_config: dict | None = None,
+    *,
+    preselected_mode: str | None = None,
 ) -> tuple[str, dict] | None:
-    """Interactive TUI: mode => provider => model + effort/reasoning. Returns (mode, role_config) or None if quit."""
+    """Interactive TUI: mode => provider => model + effort/reasoning. Returns (mode, role_config) or None if quit.
+    When preselected_mode is set, skip mode selection (e.g. doctor ai uses planner/implementer).
+    """
     modes = catalog.get("modes", ["planner", "implementer"])
     mode_providers = catalog.get("modeProviders", {})
     providers_data = catalog.get("providers", {})
 
-    mode = select_from_list([(m, m) for m in modes], "Mode: [Up/Down]  Enter to confirm")
-    if mode is None:
-        return None
+    if preselected_mode is not None and preselected_mode in modes:
+        mode = preselected_mode
+    else:
+        mode = select_from_list([(m, m) for m in modes], "Mode: [Up/Down]  Enter to confirm")
+        if mode is None:
+            return None
 
     provider_ids = mode_providers.get(mode, list(providers_data.keys()))
     available = [p for p in provider_ids if (p == "claude" and has_claude) or (p == "codex" and has_codex)]
